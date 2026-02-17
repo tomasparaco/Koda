@@ -5,6 +5,8 @@ import kodaLogo from '../assets/LogoKoda4.png';
 import { AuthService } from '../services/auth.service';
 import { supabase } from '../lib/supabase'; 
 import type { Propietario } from '../types';
+import DashboardLayout from './components/DashboardLayout';
+
 
 export default function App() {
 
@@ -22,6 +24,9 @@ export default function App() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+
+
+  
   // --- EFECTO: Detectar Link de Correo ---
   useEffect(() => {
     // 1. Chequeo manual de URL
@@ -141,39 +146,14 @@ export default function App() {
 
   // --- VISTAS --- (Sin cambios visuales, solo lógica)
   if (propiedades.length > 0 && !isUpdateFlow) {
-    const nombreUsuario = propiedades[0].nombre;
+    // Tomamos la primera propiedad por defecto (o podrías crear un selector de propiedades previo)
+    const propiedadActiva = propiedades[0]; 
+
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-[#2B4A7C] relative overflow-hidden font-sans">
-         <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute -top-40 -left-40 w-96 h-96 bg-[#1F3A5F] rounded-full opacity-50"></div>
-            <div className="absolute bottom-1/3 left-1/4 w-64 h-64 bg-[#4A6FA5] rounded-3xl opacity-30 rotate-45"></div>
-         </div>
-         <div className="relative z-10 w-full max-w-md mx-4 bg-white rounded-[2rem] p-8 shadow-2xl text-center max-h-[90vh] overflow-y-auto">
-            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">🏢</span>
-            </div>
-            <h1 className="text-2xl font-bold text-[#2B4A7C] mb-2">¡Hola, {nombreUsuario}!</h1>
-            <p className="text-gray-500 mb-6">Tienes {propiedades.length} propiedad(es) registrada(s)</p>
-            <div className="space-y-4 mb-6">
-                {propiedades.map((prop, index) => (
-                    <div key={index} className="bg-gray-50 rounded-xl p-4 text-left border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                            <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Propiedad #{index + 1}</span>
-                            <span className="font-bold text-[#4A7FDB] text-lg">{prop.apartamento}</span>
-                        </div>
-                        <div className="pt-2">
-                            <p className="text-sm text-gray-500">Edificio:</p>
-                            <p className="font-medium text-gray-700">{prop.edificios?.descripcion || 'No registrado'}</p>
-                            <p className="text-xs text-gray-400 mt-1">{prop.edificios?.direccion}</p>
-                        </div>
-                    </div>
-                ))}
-            </div>
-            <button onClick={handleLogout} className="w-full py-3 bg-red-50 text-red-500 font-semibold rounded-xl hover:bg-red-100 transition-colors">
-                Cerrar Sesión
-            </button>
-         </div>
-      </div>
+      <DashboardLayout 
+        propiedad={propiedadActiva} 
+        onLogout={handleLogout} 
+      />
     );
   }
 
