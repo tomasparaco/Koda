@@ -6,6 +6,7 @@ import { AuthService } from '../services/auth.service';
 import { supabase } from '../lib/supabase'; 
 import type { Propietario } from '../types';
 import DashboardLayout from './components/DashboardLayout';
+import UserDashboard from './components/UserDashboard';
 
 
 export default function App() {
@@ -147,13 +148,21 @@ export default function App() {
   // --- VISTAS --- (Sin cambios visuales, solo lógica)
   if (propiedades.length > 0 && !isUpdateFlow) {
     // Tomamos la primera propiedad por defecto (o podrías crear un selector de propiedades previo)
-    const propiedadActiva = propiedades[0]; 
+    const propiedadActiva = propiedades[0];
 
+    // Renderizamos distinto UI según el rol del usuario
+    if (propiedadActiva.rol === 'admin') {
+      return (
+        <DashboardLayout 
+          propiedad={propiedadActiva} 
+          onLogout={handleLogout} 
+        />
+      );
+    }
+
+    // Por defecto mostramos el dashboard de vecino
     return (
-      <DashboardLayout 
-        propiedad={propiedadActiva} 
-        onLogout={handleLogout} 
-      />
+      <UserDashboard userData={propiedadActiva} onLogout={handleLogout} />
     );
   }
 
