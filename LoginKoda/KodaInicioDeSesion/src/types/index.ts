@@ -14,7 +14,8 @@ export interface Propietario {
   alicuota: number;
   celular?: string;
   id_auth: string;
-  edificios?: Edificio; 
+  edificios?: Edificio;
+  rol?: 'admin' | 'propietario' | string; 
 }
 
 export interface RespuestaLogin {
