@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DollarSign, Search, Check, X, FileText, Calendar, TrendingDown, Image as ImageIcon } from 'lucide-react';
-import { ImageWithFallback } from './figma/ImageWithFallback';
+import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
 export function FinanzasView() {
   const [rejectReason, setRejectReason] = useState('');

@@ -5,8 +5,9 @@ import kodaLogo from '../assets/LogoKoda4.png';
 import { AuthService } from '../services/auth.service';
 import { supabase } from '../lib/supabase'; 
 import type { Propietario } from '../types';
-import DashboardLayout from './components/DashboardLayout';
+import DashboardLayout from './DashboardAdmin/DashboardLayout';
 import UserDashboard from './components/UserDashboard';
+import CondominioSelector from './components/CondominioSelector';
 
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   
   const [propiedades, setPropiedades] = useState<Propietario[]>([]); 
+  const [selectedPropiedad, setSelectedPropiedad] = useState<Propietario | null>(null);
   
   const [isResetMode, setIsResetMode] = useState(false);
   const [isUpdateFlow, setIsUpdateFlow] = useState(false);
@@ -132,6 +134,7 @@ export default function App() {
   const handleLogout = () => {
     AuthService.logout(); 
     setPropiedades([]);
+    setSelectedPropiedad(null);
     setError('');         
     setPassword('');
     setIsResetMode(false);
@@ -147,8 +150,18 @@ export default function App() {
 
   // --- VISTAS --- (Sin cambios visuales, solo lógica)
   if (propiedades.length > 0 && !isUpdateFlow) {
-    // Tomamos la primera propiedad por defecto (o podrías crear un selector de propiedades previo)
-    const propiedadActiva = propiedades[0];
+    // Si no hay propiedad seleccionada, pedimos al usuario que elija
+    if (!selectedPropiedad) {
+      return (
+        <CondominioSelector
+          propiedades={propiedades}
+          onSelect={(p) => setSelectedPropiedad(p)}
+          onLogout={handleLogout}
+        />
+      );
+    }
+
+    const propiedadActiva = selectedPropiedad;
 
     // Renderizamos distinto UI según el rol del usuario
     if (propiedadActiva.rol === 'admin') {
