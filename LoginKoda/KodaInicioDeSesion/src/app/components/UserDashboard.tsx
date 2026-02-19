@@ -29,6 +29,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { Propietario } from '../../types';
+import UserProfile from './UserProfile';
 interface UserDashboardProps {
   onLogout: () => void;
   userData: Propietario;
@@ -259,33 +260,38 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
           }`}
         >
           {/* Header del Drawer */}
-          <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                  <User className="w-6 h-6 text-white" />
+            <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                    <User className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-white">{userData?.nombre || 'Usuario'}</h3>
+                    <p className="text-white/70 text-sm">{userData?.apartamento || 'Apto'}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-white">{userData?.nombre || 'Usuario'}</h3>
-                  <p className="text-white/70 text-sm">{userData?.apartamento || 'Apto'}</p>
+                <div className="flex items-center gap-2">
+                  {userData?.rol === 'admin' && (
+                    <div className="px-3 py-1 bg-yellow-400/20 text-yellow-200 rounded-md text-xs">Administrador</div>
+                  )}
+                  <button 
+                    onClick={() => setIsMenuOpen(false)}
+                    className="p-2 rounded-lg hover:bg-white/10 transition-all"
+                  >
+                    <X className="w-5 h-5 text-white" />
+                  </button>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {userData?.rol === 'admin' && (
-                  <div className="px-3 py-1 bg-yellow-400/20 text-yellow-200 rounded-md text-xs">Administrador</div>
-                )}
-                <button 
-                  onClick={() => setIsMenuOpen(false)}
-                  className="p-2 rounded-lg hover:bg-white/10 transition-all"
-                >
-                  <X className="w-5 h-5 text-white" />
-                </button>
               </div>
             </div>
-          </div>
 
           {/* Opciones del Menú */}
           <div className="p-4 space-y-2">
+            <button onClick={() => { setActiveTab('perfil'); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-gray-100 transition-all text-left">
+              <User className="w-5 h-5 text-gray-600" />
+              <span className="text-gray-700">Perfil</span>
+            </button>
+
             <button className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-gray-100 transition-all text-left">
               <Settings className="w-5 h-5 text-gray-600" />
               <span className="text-gray-700">Configuración</span>
@@ -800,6 +806,10 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'perfil' && (
+        <UserProfile userData={userData} onBack={() => setActiveTab('inicio')} />
       )}
 
       {/* 5. Barra de Navegación Inferior Flotante (Isla) */}
