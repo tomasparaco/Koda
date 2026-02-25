@@ -1,15 +1,13 @@
-//
 import { supabase } from '../lib/supabase';
 import type { RespuestaLogin } from '../types'; 
 
-// Helper para ignorar errores "AbortError" (son inofensivos pero molestos)
 const isAbortError = (err: any) => {
     return err?.name === 'AbortError' || err?.message?.includes('AbortError');
 };
 
 export const AuthService = {
   
-  // 1. Login (¡Ahora blindado contra caídas!)
+  // 1. Login
   login: async (email: string, password: string): Promise<RespuestaLogin> => {
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -19,7 +17,6 @@ export const AuthService = {
 
       if (authError) {
         if (isAbortError(authError)) {
-            // Si Supabase aborta, asumimos fallo leve de red, pero no crash
             return { exito: false, mensaje: 'Conexión interrumpida. Intenta de nuevo.' };
         }
         return { exito: false, mensaje: 'Credenciales incorrectas.' };
@@ -27,10 +24,7 @@ export const AuthService = {
 
       if (!authData.user) return { exito: false, mensaje: 'Usuario no encontrado.' };
 
-      // Buscar propiedades
       const misPropiedades = await AuthService.getMisPropiedades(authData.user.id);
-      
-      // Si falla la búsqueda de propiedades, no bloqueamos el login, devolvemos array vacío
       const propiedadesFinal = misPropiedades || [];
 
       return { exito: true, datos: propiedadesFinal as any };
@@ -61,7 +55,7 @@ export const AuthService = {
     }
   },
 
-  // 4. Update Password (Con tu protección existente)
+  // 4. Update Password
   updatePassword: async (newPassword: string) => {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
@@ -82,7 +76,7 @@ export const AuthService = {
     }
   },
 
-  // 5. Helper
+  // 5. Helper Propiedades
   getMisPropiedades: async (userId: string) => {
     try {
         const { data, error } = await supabase
@@ -97,15 +91,15 @@ export const AuthService = {
     }
   },
   
-// 6. Obtener el directorio filtrado por el edificio del Admin
+  // 6. Directorio Vecinos
   getDirectorioVecinos: async (codigoEdificio: string) => {
     try {
       const { data, error } = await supabase
         .from('propietarios')
-        .select('*, edificios(descripcion)') // Traemos los datos y el nombre del edificio
-        .eq('codigo_edificio', codigoEdificio) // 1. FILTRO CLAVE: Solo de este edificio
-        .neq('rol', 'admin') // 2. (Opcional) No mostramos a la Junta en la lista de vecinos
-        .order('apartamento', { ascending: true }); // Los ordenamos por número de apartamento
+        .select('*, edificios(descripcion)')
+        .eq('codigo_edificio', codigoEdificio)
+        .neq('rol', 'admin')
+        .order('apartamento', { ascending: true });
 
       if (error) {
         console.error("Error al obtener directorio:", error);
@@ -115,7 +109,28 @@ export const AuthService = {
     } catch (e) {
       return [];
     }
-  }
+  },
 
+  // 7. Actualizar Teléfono (¡Ahora sincronizado para todos los apartamentos!)
+  // Recibimos 'userId' (string) en lugar de 'id_propietario'
+  updatePhone: async (userId: string, nuevoCelular: string): Promise<{ exito: boolean; mensaje: string }> => {
+    try {
+      const { error } = await supabase
+        .from('propietarios')
+        .update({ celular: nuevoCelular })
+        .eq('id_auth', userId); // <-- CLAVE: Actualiza TODAS las filas de este usuario
+
+      if (error) {
+        console.error("Error al actualizar teléfono:", error.message);
+        return { exito: false, mensaje: 'Hubo un problema al actualizar el teléfono.' };
+      }
+      
+      return { exito: true, mensaje: 'Teléfono actualizado en todas tus propiedades.' };
+      
+    } catch (error: any) {
+      console.error("Catch al actualizar teléfono:", error);
+      return { exito: false, mensaje: 'Error de conexión inesperado.' };
+    }
+  }
 
 };
