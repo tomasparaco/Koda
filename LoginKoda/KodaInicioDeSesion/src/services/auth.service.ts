@@ -87,7 +87,7 @@ export const AuthService = {
     try {
         const { data, error } = await supabase
             .from('propietarios')
-            .select(`*, edificios ( descripcion, direccion )`)
+            .select('*, edificios ( descripcion, direccion )')
             .eq('id_auth', userId);
         
         if (error) return null;
@@ -95,5 +95,27 @@ export const AuthService = {
     } catch (e) {
         return null;
     }
+  },
+  
+// 6. Obtener el directorio filtrado por el edificio del Admin
+  getDirectorioVecinos: async (codigoEdificio: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('propietarios')
+        .select('*, edificios(descripcion)') // Traemos los datos y el nombre del edificio
+        .eq('codigo_edificio', codigoEdificio) // 1. FILTRO CLAVE: Solo de este edificio
+        .neq('rol', 'admin') // 2. (Opcional) No mostramos a la Junta en la lista de vecinos
+        .order('apartamento', { ascending: true }); // Los ordenamos por número de apartamento
+
+      if (error) {
+        console.error("Error al obtener directorio:", error);
+        return [];
+      }
+      return data;
+    } catch (e) {
+      return [];
+    }
   }
+
+
 };
