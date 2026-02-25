@@ -15,7 +15,8 @@ export interface Propietario {
   celular?: string;
   id_auth: string;
   edificios?: Edificio;
-  rol?: 'admin' | 'propietario' | string; 
+  rol?: 'admin' | 'propietario' | string;
+  deuda?: number; 
 }
 
 export interface RespuestaLogin {
