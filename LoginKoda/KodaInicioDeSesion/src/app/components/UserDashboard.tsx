@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { Propietario } from '../../types'; // Ajusta la ruta a tu archivo de tipos
 import UserProfile from './UserProfile';
+import ReportPaymentModal from './ReportPaymentModal';
 
 interface UserDashboardProps {
   onLogout: () => void;
@@ -24,7 +25,8 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false); // Estado para notificaciones
   const [selectedMonth, setSelectedMonth] = useState(new Date(2026, 1)); // Febrero 2026
   const [paymentFilter, setPaymentFilter] = useState('todos'); // Estado para filtros de pagos
-  
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+
   const bolivares = balance * bcvRate;
   const isSolvent = balance <= 0;
 
@@ -267,12 +269,23 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
                     Tasa BCV: Bs. {bcvRate.toFixed(2)}
                   </div>
                 </div>
-                <button className="w-full bg-white text-blue-700 py-4 rounded-2xl hover:bg-blue-50 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]">
-                  REPORTAR PAGO
-                </button>
-              </>
-            )}
-          </div>
+                {/* Reemplaza el botón anterior con este */}
+             <button 
+               onClick={() => setIsPaymentModalOpen(true)}
+               className="w-full bg-white text-blue-700 py-4 rounded-2xl hover:bg-blue-50 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]"
+             >
+               REPORTAR PAGO
+             </button>
+           </>
+         )}
+       </div>
+
+       {/* Agrega el modal aquí */}
+       <ReportPaymentModal 
+         isOpen={isPaymentModalOpen} 
+         onClose={() => setIsPaymentModalOpen(false)} 
+         userData={userData} 
+       />
 
           {/* 2. Botonera de Accesos Rápidos */}
           <div className="grid grid-cols-3 gap-4">
