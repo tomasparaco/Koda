@@ -23,12 +23,43 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
   const [activeTab, setActiveTab] = useState('inicio'); // Estado para la navegación
   const [isMenuOpen, setIsMenuOpen] = useState(false); // Estado para el menú lateral
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false); // Estado para notificaciones
+  const [isHelpOpen, setIsHelpOpen] = useState(false); // Estado para sección de ayuda en el menú
+  const [selectedFaq, setSelectedFaq] = useState<number | null>(null); // índice de FAQ seleccionada
+
+  // highlights para secciones navegables
+  const [highlightBank, setHighlightBank] = useState(false);
+  const [highlightProfile, setHighlightProfile] = useState(false);
+  const [highlightFault, setHighlightFault] = useState(false);
+
   const [selectedMonth, setSelectedMonth] = useState(new Date(2026, 1)); // Febrero 2026
   const [paymentFilter, setPaymentFilter] = useState('todos'); // Estado para filtros de pagos
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
   const bolivares = balance * bcvRate;
   const isSolvent = balance <= 0;
+
+  // Preguntas frecuentes para el apartado de ayuda (algunas tienen destino)
+  const faqs = [
+    {
+      question: '¿Cómo hacer un pago?',
+      answer: 'Para realizar un pago, vaya a la sección "Finanzas" desde el menú inferior, seleccione el mes que desea pagar y pulse "REPORTAR PAGO". Siga las instrucciones para subir el comprobante o los datos de la transacción.'
+    },
+    {
+      question: '¿Cómo puedo reportar una falla?',
+      answer: 'En la página principal, utilice el botón "Reportar Falla" en Accesos Rápidos. Complete el formulario con la descripción y, si lo desea, adjunte una foto. Nuestro equipo revisará el reporte lo antes posible.',
+      target: 'fault'
+    },
+    {
+      question: '¿Dónde encuentro mis datos bancarios?',
+      answer: 'Los datos bancarios están disponibles en la pestaña "Finanzas" dentro de la sección "Datos Bancarios para Pagos".',
+      target: 'bank'
+    },
+    {
+      question: '¿Cómo cambio mi información personal?',
+      answer: 'Acceda a "Perfil" desde el menú lateral y allí podrá editar su nombre, teléfono, correo y demás información personal.',
+      target: 'profile'
+    },
+  ];
 
   // Data de ejemplo para notificaciones
   const notifications = [
@@ -101,6 +132,34 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
     const newDate = new Date(selectedMonth);
     newDate.setMonth(newDate.getMonth() + direction);
     setSelectedMonth(newDate);
+  };
+
+  // maneja navegación/iluminado a partir de FAQs con destino
+  const handleFaqClick = (idx: number) => {
+    const faq = faqs[idx] as any;
+    setSelectedFaq(idx);
+    if (faq.target) {
+      switch (faq.target) {
+        case 'bank':
+          setActiveTab('finanzas');
+          setHighlightBank(true);
+          setTimeout(() => setHighlightBank(false), 3000);
+          break;
+        case 'profile':
+          setActiveTab('perfil');
+          setHighlightProfile(true);
+          setTimeout(() => setHighlightProfile(false), 3000);
+          break;
+        case 'fault':
+          setActiveTab('inicio');
+          setHighlightFault(true);
+          setTimeout(() => setHighlightFault(false), 3000);
+          break;
+      }
+      // cerrar menú y ayuda
+      setIsMenuOpen(false);
+      setIsHelpOpen(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -185,7 +244,7 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
 
       {/* Menú Lateral (Drawer) */}
       <div className={`fixed inset-0 z-50 transition-opacity duration-300 ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsMenuOpen(false)} />
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setIsMenuOpen(false); setIsHelpOpen(false); setSelectedFaq(null); }} />
         <div className={`absolute top-0 right-0 h-full w-80 max-w-[85vw] bg-white shadow-2xl transition-transform duration-300 ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
             <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-6">
               <div className="flex items-start justify-between mb-4">
@@ -202,7 +261,7 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
                   {userData?.rol === 'admin' && (
                     <div className="px-3 py-1 bg-yellow-400/20 text-yellow-200 rounded-md text-xs">Administrador</div>
                   )}
-                  <button onClick={() => setIsMenuOpen(false)} className="p-2 rounded-lg hover:bg-white/10 transition-all">
+                  <button onClick={() => { setIsMenuOpen(false); setIsHelpOpen(false); setSelectedFaq(null); }} className="p-2 rounded-lg hover:bg-white/10 transition-all">
                     <X className="w-5 h-5 text-white" />
                   </button>
                 </div>
@@ -218,10 +277,34 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
               <Settings className="w-5 h-5 text-gray-600" />
               <span className="text-gray-700">Configuración</span>
             </button>
-            <button className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-gray-100 transition-all text-left">
+            <button
+              onClick={() => {
+                setIsHelpOpen(prev => !prev);
+                setSelectedFaq(null); // reset any answer when toggling
+              }}
+              className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-gray-100 transition-all text-left"
+            >
               <HelpCircle className="w-5 h-5 text-gray-600" />
               <span className="text-gray-700">Ayuda</span>
             </button>
+            {isHelpOpen && (
+              <div className="ml-8 space-y-1">
+                {faqs.map((faq, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleFaqClick(idx)}
+                    className="w-full text-left text-gray-600 text-sm py-1 hover:underline"
+                  >
+                    {faq.question}
+                  </button>
+                ))}
+                {selectedFaq !== null && (
+                  <div className="mt-2 p-3 bg-white/10 text-white rounded-lg text-sm">
+                    {faqs[selectedFaq].answer}
+                  </div>
+                )}
+              </div>
+            )}
             <button className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-gray-100 transition-all text-left">
               <FileText className="w-5 h-5 text-gray-600" />
               <span className="text-gray-700">Términos Legales</span>
@@ -289,7 +372,7 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
 
           {/* 2. Botonera de Accesos Rápidos */}
           <div className="grid grid-cols-3 gap-4">
-            <button className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 hover:bg-white/20 transition-all border border-white/20 shadow-lg">
+            <button className={`bg-white/10 backdrop-blur-lg rounded-2xl p-6 hover:bg-white/20 transition-all border border-white/20 shadow-lg ${highlightFault ? 'ring-2 ring-yellow-300 animate-pulse' : ''}`}>
               <div className="flex flex-col items-center gap-3">
                 <div className="bg-blue-500 p-4 rounded-full">
                   <Wrench className="w-6 h-6 text-white" />
@@ -407,7 +490,7 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
           </div>
 
           {/* Datos Bancarios */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
+          <div className={`bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20 ${highlightBank ? 'ring-2 ring-yellow-300 animate-pulse' : ''}`}>
             <h3 className="text-white mb-4 flex items-center gap-2"><CreditCard className="w-5 h-5" /> Datos Bancarios para Pagos</h3>
             <div className="space-y-3 text-sm">
               <div><span className="text-white/60 block">Zelle:</span><span className="text-white">pagos@edificiokoda.com</span></div>
@@ -444,7 +527,7 @@ export default function UserDashboard({ onLogout, userData }: UserDashboardProps
       )}
 
       {activeTab === 'perfil' && (
-        <UserProfile userData={userData} onBack={() => setActiveTab('inicio')} />
+        <UserProfile userData={userData} onBack={() => setActiveTab('inicio')} highlight={highlightProfile} />
       )}
 
       {/* Bottom Navigation */}

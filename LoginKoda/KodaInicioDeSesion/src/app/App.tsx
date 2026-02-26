@@ -1,5 +1,5 @@
 //
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Mail, Lock, ArrowLeft, KeyRound } from 'lucide-react'; 
 import kodaLogo from '../assets/LogoKoda4.png';
 import { AuthService } from '../services/auth.service';
@@ -8,7 +8,29 @@ import type { Propietario } from '../types';
 import DashboardLayout from './DashboardAdmin/DashboardLayout';
 import UserDashboard from './components/UserDashboard';
 import CondominioSelector from './components/CondominioSelector';
+import { Variants } from 'framer-motion';
+import { motion } from 'framer-motion';
+// componente auxiliar que dispara la animación cuando entra en el viewport (scroll)
+import AnimatedSection from './components/AnimatedSection';
 
+export const container: Variants = {
+  hidden: {},
+  visible: {
+    transition: {
+      staggerChildren: 0.12,    // tiempo entre cada hijo
+      when: 'beforeChildren',   // primero el contenedor, luego los hijos
+    },
+  },
+};
+
+export const item: Variants = {
+  hidden: { opacity: 0, y: 30 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.5, ease: 'easeOut' },
+  },
+};
 
 export default function App() {
 
@@ -24,6 +46,18 @@ export default function App() {
   
   const [isResetMode, setIsResetMode] = useState(false);
   const [isUpdateFlow, setIsUpdateFlow] = useState(false);
+
+  // A key that changes whenever we switch to a different screen/view; used to trigger
+  // a CSS animation on the container each time the user navigates.
+  const viewKey = useMemo(() => {
+    if (propiedades.length > 0) {
+      if (!selectedPropiedad) return 'selector';
+      return `${selectedPropiedad.rol}-${selectedPropiedad.id_propietario}`;
+    }
+    if (isUpdateFlow) return 'update';
+    if (isResetMode) return 'reset';
+    return 'login';
+  }, [propiedades.length, selectedPropiedad, isUpdateFlow, isResetMode]);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -149,113 +183,136 @@ export default function App() {
   };
 
   // --- VISTAS --- (Sin cambios visuales, solo lógica)
+  // Instead of returning directly from each branch we build the content and
+  // render it inside a wrapper with a key. Changing the key forces React to
+  // remount the container which in turn retriggers the CSS animation.
+  let contenido: React.ReactNode;
+
   if (propiedades.length > 0 && !isUpdateFlow) {
     // Si no hay propiedad seleccionada, pedimos al usuario que elija
     if (!selectedPropiedad) {
-      return (
+      contenido = (
         <CondominioSelector
           propiedades={propiedades}
           onSelect={(p) => setSelectedPropiedad(p)}
           onLogout={handleLogout}
         />
       );
+    } else {
+      const propiedadActiva = selectedPropiedad;
+
+      // Renderizamos distinto UI según el rol del usuario
+      if (propiedadActiva.rol === 'admin') {
+        contenido = (
+          <DashboardLayout 
+            propiedad={propiedadActiva} 
+            onLogout={handleLogout} 
+          />
+        );
+      } else {
+        // Por defecto mostramos el dashboard de vecino
+        contenido = (
+          <UserDashboard userData={propiedadActiva} onLogout={handleLogout} />
+        );
+      }
     }
+  } else {
+    let titulo = 'Inicia Sesión';
+    let handleSubmit = handleLogin;
+    if (isUpdateFlow) { titulo = 'Nueva Contraseña'; handleSubmit = handleUpdatePassword; }
+    else if (isResetMode) { titulo = 'Recuperar Cuenta'; handleSubmit = handleResetRequest; }
 
-    const propiedadActiva = selectedPropiedad;
+    contenido = (
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#2B4A7C] relative overflow-hidden font-sans">
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-40 -left-40 w-96 h-96 bg-[#1F3A5F] rounded-full opacity-50"></div>
+          <div className="absolute top-1/4 -right-32 w-80 h-80 bg-[#3D5A80] rounded-full opacity-40"></div>
+          <div className="absolute bottom-1/3 left-1/4 w-64 h-64 bg-[#4A6FA5] rounded-3xl opacity-30 rotate-45"></div>
+          <div className="absolute bottom-20 -left-20 w-48 h-48 bg-[#6B8EC7] rounded-full opacity-40"></div>
+          <div className="absolute -bottom-20 right-20 w-56 h-56 bg-[#5074A8] rounded-2xl opacity-25 rotate-12"></div>
+          <div className="absolute bottom-10 right-10">
+            <div className="w-16 h-16 relative"><div className="absolute inset-0 bg-white opacity-60 rounded-full blur-md"></div></div>
+          </div>
+        </div>
 
-    // Renderizamos distinto UI según el rol del usuario
-    if (propiedadActiva.rol === 'admin') {
-      return (
-        <DashboardLayout 
-          propiedad={propiedadActiva} 
-          onLogout={handleLogout} 
-        />
-      );
-    }
+        <div className="relative z-10 w-full max-w-sm mx-4">
+          <div className="bg-gradient-to-b from-[#6BA3D8] to-[#4A7FDB] rounded-[2.5rem] p-8 shadow-2xl">
+            <div className="flex flex-col items-center mb-8">
+              <div className="w-28 h-28 rounded-3xl bg-white flex items-center justify-center mb-4 shadow-lg p-3">
+                <img src={kodaLogo} alt="Koda Logo" className="w-full h-full object-contain" />
+              </div>
+              <h1 className="text-3xl font-bold text-white mb-2">Koda</h1>
+              <h2 className="text-xl font-semibold text-white tracking-wide">{titulo}</h2>
+            </div>
 
-    // Por defecto mostramos el dashboard de vecino
-    return (
-      <UserDashboard userData={propiedadActiva} onLogout={handleLogout} />
+            <div className="bg-white rounded-3xl p-6 shadow-xl">
+              <form onSubmit={handleSubmit}>
+                  {isUpdateFlow && (
+                      <>
+                          <div className="mb-4 relative">
+                              <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><KeyRound className="w-5 h-5 text-[#4A7FDB]" /></div>
+                              <input type="password" placeholder="Nueva contraseña" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
+                          </div>
+                          <div className="mb-4 relative">
+                              <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Lock className="w-5 h-5 text-[#4A7FDB]" /></div>
+                              <input type="password" placeholder="Confirmar contraseña" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
+                          </div>
+                      </>
+                  )}
+                  {!isUpdateFlow && (
+                      <div className="mb-4 relative">
+                          <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Mail className="w-5 h-5 text-[#4A7FDB]" /></div>
+                          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
+                      </div>
+                  )}
+                  {!isUpdateFlow && !isResetMode && (
+                    <div className="mb-4 relative">
+                        <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Lock className="w-5 h-5 text-[#4A7FDB]" /></div>
+                        <input type="password" placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
+                    </div>
+                  )}
+                  {error && <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-500 text-sm rounded-xl text-center">{error}</div>}
+                  {successMsg && <div className="mb-4 p-3 bg-green-50 border border-green-100 text-green-600 text-sm rounded-xl text-center">{successMsg}</div>}
+
+                  <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-[#4A7FDB] to-[#5DA9E8] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70">
+                      {loading ? 'Procesando...' : (isUpdateFlow ? 'Guardar Nueva Contraseña' : (isResetMode ? 'Enviar Enlace' : 'Iniciar Sesión'))}
+                  </button>
+              </form>
+
+              {!isUpdateFlow && (
+                  <div className="mt-6 text-center space-y-2">
+                  {!isResetMode ? (
+                      <>
+                      <p className="text-gray-600 text-sm">No tienes cuenta? <button className="text-[#4A7FDB] font-semibold hover:underline">Regístrate</button></p>
+                      <button type="button" onClick={toggleMode} className="text-[#4A7FDB] text-sm hover:underline font-medium">Olvidaste tu contraseña?</button>
+                      </>
+                  ) : (
+                      <button type="button" onClick={toggleMode} className="flex items-center justify-center w-full text-gray-500 text-sm hover:text-[#4A7FDB] transition-colors gap-2"><ArrowLeft className="w-4 h-4" /> Volver al inicio</button>
+                  )}
+                  </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  let titulo = 'Inicia Sesión';
-  let handleSubmit = handleLogin;
-  if (isUpdateFlow) { titulo = 'Nueva Contraseña'; handleSubmit = handleUpdatePassword; }
-  else if (isResetMode) { titulo = 'Recuperar Cuenta'; handleSubmit = handleResetRequest; }
-
+  // envolvemos el contenido en un motion.div para que cada vez que cambie
+  // `viewKey` (navegación entre pantallas) se remonte el contenedor y se
+  // reproduzca el slide-up + fade-in con stagger. Anteriormente usábamos la
+  // clase `animate-rise` de Tailwind, ahora aprovechamos los `variants` ya
+  // declarados arriba.
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[#2B4A7C] relative overflow-hidden font-sans">
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-[#1F3A5F] rounded-full opacity-50"></div>
-        <div className="absolute top-1/4 -right-32 w-80 h-80 bg-[#3D5A80] rounded-full opacity-40"></div>
-        <div className="absolute bottom-1/3 left-1/4 w-64 h-64 bg-[#4A6FA5] rounded-3xl opacity-30 rotate-45"></div>
-        <div className="absolute bottom-20 -left-20 w-48 h-48 bg-[#6B8EC7] rounded-full opacity-40"></div>
-        <div className="absolute -bottom-20 right-20 w-56 h-56 bg-[#5074A8] rounded-2xl opacity-25 rotate-12"></div>
-        <div className="absolute bottom-10 right-10">
-          <div className="w-16 h-16 relative"><div className="absolute inset-0 bg-white opacity-60 rounded-full blur-md"></div></div>
-        </div>
-      </div>
-
-      <div className="relative z-10 w-full max-w-sm mx-4">
-        <div className="bg-gradient-to-b from-[#6BA3D8] to-[#4A7FDB] rounded-[2.5rem] p-8 shadow-2xl">
-          <div className="flex flex-col items-center mb-8">
-            <div className="w-28 h-28 rounded-3xl bg-white flex items-center justify-center mb-4 shadow-lg p-3">
-              <img src={kodaLogo} alt="Koda Logo" className="w-full h-full object-contain" />
-            </div>
-            <h1 className="text-3xl font-bold text-white mb-2">Koda</h1>
-            <h2 className="text-xl font-semibold text-white tracking-wide">{titulo}</h2>
-          </div>
-
-          <div className="bg-white rounded-3xl p-6 shadow-xl">
-            <form onSubmit={handleSubmit}>
-                {isUpdateFlow && (
-                    <>
-                        <div className="mb-4 relative">
-                            <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><KeyRound className="w-5 h-5 text-[#4A7FDB]" /></div>
-                            <input type="password" placeholder="Nueva contraseña" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
-                        </div>
-                        <div className="mb-4 relative">
-                            <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Lock className="w-5 h-5 text-[#4A7FDB]" /></div>
-                            <input type="password" placeholder="Confirmar contraseña" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
-                        </div>
-                    </>
-                )}
-                {!isUpdateFlow && (
-                    <div className="mb-4 relative">
-                        <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Mail className="w-5 h-5 text-[#4A7FDB]" /></div>
-                        <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
-                    </div>
-                )}
-                {!isUpdateFlow && !isResetMode && (
-                  <div className="mb-4 relative">
-                      <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Lock className="w-5 h-5 text-[#4A7FDB]" /></div>
-                      <input type="password" placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
-                  </div>
-                )}
-                {error && <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-500 text-sm rounded-xl text-center">{error}</div>}
-                {successMsg && <div className="mb-4 p-3 bg-green-50 border border-green-100 text-green-600 text-sm rounded-xl text-center">{successMsg}</div>}
-
-                <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-[#4A7FDB] to-[#5DA9E8] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70">
-                    {loading ? 'Procesando...' : (isUpdateFlow ? 'Guardar Nueva Contraseña' : (isResetMode ? 'Enviar Enlace' : 'Iniciar Sesión'))}
-                </button>
-            </form>
-
-            {!isUpdateFlow && (
-                <div className="mt-6 text-center space-y-2">
-                {!isResetMode ? (
-                    <>
-                    <p className="text-gray-600 text-sm">No tienes cuenta? <button className="text-[#4A7FDB] font-semibold hover:underline">Regístrate</button></p>
-                    <button type="button" onClick={toggleMode} className="text-[#4A7FDB] text-sm hover:underline font-medium">Olvidaste tu contraseña?</button>
-                    </>
-                ) : (
-                    <button type="button" onClick={toggleMode} className="flex items-center justify-center w-full text-gray-500 text-sm hover:text-[#4A7FDB] transition-colors gap-2"><ArrowLeft className="w-4 h-4" /> Volver al inicio</button>
-                )}
-                </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <motion.div
+      key={viewKey}
+      variants={container}
+      initial="hidden"
+      animate="visible"
+      className="min-h-screen"
+    >
+      {contenido}
+    </motion.div>
   );
 }
+

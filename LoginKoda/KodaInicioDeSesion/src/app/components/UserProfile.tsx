@@ -6,11 +6,12 @@ import { AuthService } from '../../services/auth.service';
 interface UserProfileProps {
   userData: Propietario;
   onBack: () => void;
+  highlight?: boolean; // resalta sección si se navega desde FAQ
 }
 
 const PREFIJOS = ['0424', '0414', '0422', '0412', '0426'];
 
-export default function UserProfile({ userData, onBack }: UserProfileProps) {
+export default function UserProfile({ userData, onBack, highlight = false }: UserProfileProps) {
   const getInitialData = () => {
     const celular = userData?.celular || '';
     const celularLimpio = celular.replace(/-/g, '');
@@ -72,7 +73,7 @@ export default function UserProfile({ userData, onBack }: UserProfileProps) {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6 animate-fade-in pb-32">
+    <div className={`max-w-4xl mx-auto px-4 py-6 space-y-6 animate-fade-in pb-32 ${highlight ? 'ring-2 ring-yellow-300 animate-pulse' : ''}`}>
       {/* Cabecera */}
       <div className="flex items-center gap-4 mb-6">
         <button 

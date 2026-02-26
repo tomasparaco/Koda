@@ -6,6 +6,7 @@ import { InicioView } from './InicioView';
 import { FinanzasView } from './FinanzasView';
 import { ComunidadView } from './ComunidadView';
 import { UsuariosView } from './UsuariosView';
+import { SettingsView } from './SettingsView';
 import type { Propietario } from '../../types';
 
 interface DashboardLayoutProps {
@@ -55,6 +56,7 @@ export default function DashboardLayout({ propiedad, onLogout }: DashboardLayout
         {activeTab === 'comunidad' && <ComunidadView />}
         {/* AQUÍ ES DONDE PASAMOS LA PROPIEDAD A LA VISTA DE USUARIOS */}
         {activeTab === 'usuarios' && <UsuariosView propiedad={propiedad} />}
+        {activeTab === 'configuracion' && <SettingsView />}
       </main>
 
       {/* Bottom Navigation (Floating Pill) */}
@@ -142,7 +144,7 @@ export default function DashboardLayout({ propiedad, onLogout }: DashboardLayout
               </div>
             </div>
             <nav className="flex-1 p-4 text-gray-700">
-              <button className="w-full flex items-center gap-3 p-4 hover:bg-gray-100 rounded-lg transition-colors">
+              <button onClick={() => setActiveTab('configuracion')} className="w-full flex items-center gap-3 p-4 hover:bg-gray-100 rounded-lg transition-colors">
                 <Settings className="w-5 h-5" />
                 <span className="font-medium">Configuración</span>
               </button>
