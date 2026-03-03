@@ -1,34 +1,84 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Building2, MapPin, Hash, Camera, Edit2, Save, X } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import CuentasBancarias from './CuentasBancarias';
 
 export function SettingsView() {
+  // ⚠️ REEMPLAZAR POR EL ID DEL EDIFICIO AUTENTICADO
+  const [codigoEdificioActual, setCodigoEdificioActual] = useState<string | null>(null);
+
   const [nombre, setNombre] = useState('');
   const [direccion, setDireccion] = useState('');
   const [rif, setRif] = useState('');
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // helper to persist current state
-  const saveConfig = () => {
-    const config = { nombre, direccion, rif, logo: logoPreview };
-    localStorage.setItem('configEdificio', JSON.stringify(config));
-  };
-
-  // Cargar datos iniciales
+  // Cargar datos iniciales desde Supabase y localStorage (logo)
   useEffect(() => {
-    const saved = localStorage.getItem('configEdificio');
-    if (saved) {
+    const fetchConfig = async () => {
       try {
-        const parsed = JSON.parse(saved);
-        setNombre(parsed.nombre || '');
-        setDireccion(parsed.direccion || '');
-        setRif(parsed.rif || '');
-        if (parsed.logo) setLogoPreview(parsed.logo);
+        setLoading(true);
+
+        // 1. Obtener la sesión actual desde Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !authData.user) {
+          console.error('No hay un usuario autenticado activo');
+          setLoading(false);
+          return;
+        }
+
+        const userEmail = authData.user.email; // o authData.user.id si los relacionaste por UUID
+
+        // 2. Buscar al propietario/usuario en su tabla usando el dato de Auth
+        // SUSTITUYE 'propietarios' y 'correo' por los nombres exactos de tus atributos
+        const { data: datosPropietario, error: errorPropietario } = await supabase
+          .from('propietarios')
+          .select('codigo_edificio')
+          .eq('correo', userEmail)
+          .single();
+
+        if (errorPropietario || !datosPropietario) {
+          console.error('No se encontró el propietario asociado a este correo');
+          setLoading(false);
+          return;
+        }
+
+        // ¡Aquí capturamos el ID dinámico!
+        const idEdificioDinamico = datosPropietario.codigo_edificio;
+        setCodigoEdificioActual(idEdificioDinamico);
+
+        // 3. Ahora sí, traemos los datos del edificio correcto
+        const { data: datosEdificio, error: errorEdificio } = await supabase
+          .from('edificios')
+          .select('descripcion, direccion, rif')
+          .eq('codigo_edificio', idEdificioDinamico)
+          .single();
+
+        if (errorEdificio) throw errorEdificio;
+
+        if (datosEdificio) {
+          setNombre(datosEdificio.descripcion || '');
+          setDireccion(datosEdificio.direccion || '');
+          setRif(datosEdificio.rif || '');
+        }
+
       } catch (e) {
-        console.error('Error parsing saved configuration', e);
+        console.error('Error sincronizando perfil de la BDD:', e);
+      } finally {
+        setLoading(false);
       }
-    }
+
+      // Lógica de caché para el logo (se mantiene igual)
+      const savedLogo = localStorage.getItem('logoEdificio');
+      if (savedLogo) {
+        setLogoPreview(savedLogo);
+      }
+    };
+
+    fetchConfig();
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -37,20 +87,48 @@ export function SettingsView() {
       setLogoFile(file);
       const reader = new FileReader();
       reader.onload = () => {
-        setLogoPreview(reader.result as string);
+        const base64String = reader.result as string;
+        setLogoPreview(base64String);
+        localStorage.setItem('logoEdificio', base64String); // Guardar imagen en caché
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleFieldSave = (field: string) => {
-    setEditingField(null);
-    saveConfig();
+  // Función para guardar campos individuales en la base de datos
+  const handleFieldSave = async (field: string) => {
+    try {
+      let payload = {};
+      
+      // Armamos el objeto dependiendo de qué campo se está editando
+      if (field === 'nombre') payload = { descripcion: nombre };
+      if (field === 'direccion') payload = { direccion: direccion };
+      if (field === 'rif') payload = { rif: rif };
+
+      // Si es el logo, ya se guardó en el handleFileChange, solo cerramos la edición
+      if (field !== 'logo') {
+        const { error } = await supabase
+          .from('edificios')
+          .update(payload)
+          .eq('codigo_edificio', codigoEdificioActual);
+
+        if (error) throw error;
+      }
+
+      setEditingField(null);
+    } catch (error: any) {
+      console.error('Error al actualizar BDD:', error);
+      alert('Error al guardar: ' + error.message);
+    }
   };
+
+  if (loading) {
+    return <div className="text-white/70 text-center py-10 animate-pulse">Sincronizando con la base de datos...</div>;
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6 animate-fade-in">
-      <h2 className="text-2xl font-bold flex items-center gap-2">
+      <h2 className="text-2xl font-bold flex items-center gap-2 text-white">
         <Building2 className="w-6 h-6" />
         Perfil del Condominio
       </h2>
@@ -192,6 +270,10 @@ export function SettingsView() {
             </div>
           )}
         </div>
+        
+        {/* Componente Integrado de Cuentas y Contacto */}
+        <CuentasBancarias />
+        
       </div>
     </div>
   );
