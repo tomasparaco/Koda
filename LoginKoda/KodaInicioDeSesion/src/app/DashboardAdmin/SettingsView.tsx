@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, MapPin, Hash, Camera, Edit2, Save, X } from 'lucide-react';
+import { Building2, MapPin, Hash, Camera, Edit2, Save, X, AlertCircle, CreditCard } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import CuentasBancarias from './CuentasBancarias';
 
 export function SettingsView() {
-  // ⚠️ REEMPLAZAR POR EL ID DEL EDIFICIO AUTENTICADO
   const [codigoEdificioActual, setCodigoEdificioActual] = useState<string | null>(null);
 
   const [nombre, setNombre] = useState('');
@@ -15,49 +14,52 @@ export function SettingsView() {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Cargar datos iniciales desde Supabase y localStorage (logo)
+  // Estado para capturar el error y mostrarlo en pantalla si algo falla
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchConfig = async () => {
       try {
         setLoading(true);
+        setErrorCarga(null);
 
-        // 1. Obtener la sesión actual desde Supabase Auth
+        // 1. Obtener la sesión actual
         const { data: authData, error: authError } = await supabase.auth.getUser();
         
         if (authError || !authData.user) {
-          console.error('No hay un usuario autenticado activo');
-          setLoading(false);
-          return;
+          throw new Error('No hay un usuario autenticado activo');
         }
 
-        const userEmail = authData.user.email; // o authData.user.id si los relacionaste por UUID
+        // CLAVE 1: Usamos el ID de autenticación, no el correo.
+        const userId = authData.user.id; 
 
-        // 2. Buscar al propietario/usuario en su tabla usando el dato de Auth
-        // SUSTITUYE 'propietarios' y 'correo' por los nombres exactos de tus atributos
+        // CLAVE 2: Usamos limit(1) por si el admin tiene 2 apartamentos (evita el error de .single())
         const { data: datosPropietario, error: errorPropietario } = await supabase
           .from('propietarios')
           .select('codigo_edificio')
-          .eq('correo', userEmail)
-          .single();
+          .eq('id_auth', userId)
+          .limit(1);
 
-        if (errorPropietario || !datosPropietario) {
-          console.error('No se encontró el propietario asociado a este correo');
-          setLoading(false);
-          return;
+        if (errorPropietario) throw errorPropietario;
+        
+        if (!datosPropietario || datosPropietario.length === 0) {
+          throw new Error('Tu usuario no está vinculado a ningún edificio en la base de datos.');
         }
 
-        // ¡Aquí capturamos el ID dinámico!
-        const idEdificioDinamico = datosPropietario.codigo_edificio;
+        const idEdificioDinamico = datosPropietario[0].codigo_edificio;
         setCodigoEdificioActual(idEdificioDinamico);
 
-        // 3. Ahora sí, traemos los datos del edificio correcto
+        // 3. Traemos los datos del edificio
         const { data: datosEdificio, error: errorEdificio } = await supabase
           .from('edificios')
           .select('descripcion, direccion, rif')
           .eq('codigo_edificio', idEdificioDinamico)
           .single();
 
-        if (errorEdificio) throw errorEdificio;
+        if (errorEdificio) {
+          // Si da error, no rompemos toda la página, solo mostramos consola
+          console.error("Error al traer datos del edificio:", errorEdificio);
+        }
 
         if (datosEdificio) {
           setNombre(datosEdificio.descripcion || '');
@@ -65,13 +67,13 @@ export function SettingsView() {
           setRif(datosEdificio.rif || '');
         }
 
-      } catch (e) {
+      } catch (e: any) {
         console.error('Error sincronizando perfil de la BDD:', e);
+        setErrorCarga(e.message); // Guardamos el error para mostrarlo
       } finally {
         setLoading(false);
       }
 
-      // Lógica de caché para el logo (se mantiene igual)
       const savedLogo = localStorage.getItem('logoEdificio');
       if (savedLogo) {
         setLogoPreview(savedLogo);
@@ -89,23 +91,20 @@ export function SettingsView() {
       reader.onload = () => {
         const base64String = reader.result as string;
         setLogoPreview(base64String);
-        localStorage.setItem('logoEdificio', base64String); // Guardar imagen en caché
+        localStorage.setItem('logoEdificio', base64String);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  // Función para guardar campos individuales en la base de datos
   const handleFieldSave = async (field: string) => {
     try {
       let payload = {};
       
-      // Armamos el objeto dependiendo de qué campo se está editando
       if (field === 'nombre') payload = { descripcion: nombre };
       if (field === 'direccion') payload = { direccion: direccion };
       if (field === 'rif') payload = { rif: rif };
 
-      // Si es el logo, ya se guardó en el handleFileChange, solo cerramos la edición
       if (field !== 'logo') {
         const { error } = await supabase
           .from('edificios')
@@ -133,6 +132,14 @@ export function SettingsView() {
         Perfil del Condominio
       </h2>
 
+      {/* Si hubo un error grave, lo mostramos aquí arriba en rojo */}
+      {errorCarga && (
+        <div className="bg-red-500/10 border border-red-500/20 text-red-300 p-4 rounded-xl flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <p className="text-sm">{errorCarga}</p>
+        </div>
+      )}
+
       <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 shadow-lg space-y-4">
         {/* Nombre */}
         <div className="flex items-center justify-between">
@@ -142,34 +149,14 @@ export function SettingsView() {
           </div>
           {editingField === 'nombre' ? (
             <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                className="bg-white/5 text-white border border-white/10 rounded-lg py-1 px-3 focus:outline-none focus:ring-2 focus:ring-blue-400"
-              />
-              <button
-                onClick={() => handleFieldSave('nombre')}
-                className="p-2 bg-green-500/20 rounded-lg hover:bg-green-500/40 transition-colors"
-              >
-                <Save className="w-4 h-4 text-green-300" />
-              </button>
-              <button
-                onClick={() => setEditingField(null)}
-                className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 transition-colors"
-              >
-                <X className="w-4 h-4 text-red-300" />
-              </button>
+              <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="bg-white/5 text-white border border-white/10 rounded-lg py-1 px-3 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              <button onClick={() => handleFieldSave('nombre')} className="p-2 bg-green-500/20 rounded-lg hover:bg-green-500/40 transition-colors"><Save className="w-4 h-4 text-green-300" /></button>
+              <button onClick={() => setEditingField(null)} className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 transition-colors"><X className="w-4 h-4 text-red-300" /></button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-white">{nombre || <em className="text-gray-400">Sin datos</em>}</span>
-              <button
-                onClick={() => setEditingField('nombre')}
-                className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors"
-              >
-                <Edit2 className="w-4 h-4 text-white/50" />
-              </button>
+              <button onClick={() => setEditingField('nombre')} disabled={!codigoEdificioActual} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors disabled:opacity-50"><Edit2 className="w-4 h-4 text-white/50" /></button>
             </div>
           )}
         </div>
@@ -182,25 +169,14 @@ export function SettingsView() {
           </div>
           {editingField === 'direccion' ? (
             <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={direccion}
-                onChange={(e) => setDireccion(e.target.value)}
-                className="bg-white/5 text-white border border-white/10 rounded-lg py-1 px-3 focus:outline-none focus:ring-2 focus:ring-blue-400"
-              />
-              <button onClick={() => handleFieldSave('direccion')} className="p-2 bg-green-500/20 rounded-lg hover:bg-green-500/40 transition-colors">
-                <Save className="w-4 h-4 text-green-300" />
-              </button>
-              <button onClick={() => setEditingField(null)} className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 transition-colors">
-                <X className="w-4 h-4 text-red-300" />
-              </button>
+              <input type="text" value={direccion} onChange={(e) => setDireccion(e.target.value)} className="bg-white/5 text-white border border-white/10 rounded-lg py-1 px-3 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              <button onClick={() => handleFieldSave('direccion')} className="p-2 bg-green-500/20 rounded-lg hover:bg-green-500/40 transition-colors"><Save className="w-4 h-4 text-green-300" /></button>
+              <button onClick={() => setEditingField(null)} className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 transition-colors"><X className="w-4 h-4 text-red-300" /></button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-white">{direccion || <em className="text-gray-400">Sin datos</em>}</span>
-              <button onClick={() => setEditingField('direccion')} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors">
-                <Edit2 className="w-4 h-4 text-white/50" />
-              </button>
+              <button onClick={() => setEditingField('direccion')} disabled={!codigoEdificioActual} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors disabled:opacity-50"><Edit2 className="w-4 h-4 text-white/50" /></button>
             </div>
           )}
         </div>
@@ -213,25 +189,14 @@ export function SettingsView() {
           </div>
           {editingField === 'rif' ? (
             <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={rif}
-                onChange={(e) => setRif(e.target.value)}
-                className="bg-white/5 text-white border border-white/10 rounded-lg py-1 px-3 focus:outline-none focus:ring-2 focus:ring-blue-400"
-              />
-              <button onClick={() => handleFieldSave('rif')} className="p-2 bg-green-500/20 rounded-lg hover:bg-green-500/40 transition-colors">
-                <Save className="w-4 h-4 text-green-300" />
-              </button>
-              <button onClick={() => setEditingField(null)} className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 transition-colors">
-                <X className="w-4 h-4 text-red-300" />
-              </button>
+              <input type="text" value={rif} onChange={(e) => setRif(e.target.value)} className="bg-white/5 text-white border border-white/10 rounded-lg py-1 px-3 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              <button onClick={() => handleFieldSave('rif')} className="p-2 bg-green-500/20 rounded-lg hover:bg-green-500/40 transition-colors"><Save className="w-4 h-4 text-green-300" /></button>
+              <button onClick={() => setEditingField(null)} className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 transition-colors"><X className="w-4 h-4 text-red-300" /></button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-white">{rif || <em className="text-gray-400">Sin datos</em>}</span>
-              <button onClick={() => setEditingField('rif')} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors">
-                <Edit2 className="w-4 h-4 text-white/50" />
-              </button>
+              <button onClick={() => setEditingField('rif')} disabled={!codigoEdificioActual} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors disabled:opacity-50"><Edit2 className="w-4 h-4 text-white/50" /></button>
             </div>
           )}
         </div>
@@ -244,18 +209,9 @@ export function SettingsView() {
           </div>
           {editingField === 'logo' ? (
             <div className="flex items-center gap-2">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="text-white"
-              />
-              <button onClick={() => handleFieldSave('logo')} className="p-2 bg-green-500/20 rounded-lg hover:bg-green-500/40 transition-colors">
-                <Save className="w-4 h-4 text-green-300" />
-              </button>
-              <button onClick={() => setEditingField(null)} className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 transition-colors">
-                <X className="w-4 h-4 text-red-300" />
-              </button>
+              <input type="file" accept="image/*" onChange={handleFileChange} className="text-white" />
+              <button onClick={() => handleFieldSave('logo')} className="p-2 bg-green-500/20 rounded-lg hover:bg-green-500/40 transition-colors"><Save className="w-4 h-4 text-green-300" /></button>
+              <button onClick={() => setEditingField(null)} className="p-2 bg-red-500/20 rounded-lg hover:bg-red-500/40 transition-colors"><X className="w-4 h-4 text-red-300" /></button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
@@ -264,15 +220,20 @@ export function SettingsView() {
               ) : (
                 <span className="text-white"><em>Sin logo</em></span>
               )}
-              <button onClick={() => setEditingField('logo')} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors">
-                <Edit2 className="w-4 h-4 text-white/50" />
-              </button>
+              <button onClick={() => setEditingField('logo')} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors"><Edit2 className="w-4 h-4 text-white/50" /></button>
             </div>
           )}
         </div>
         
-        {/* Componente Integrado de Cuentas y Contacto */}
-        <CuentasBancarias />
+        {/* COMPONENTE INTEGRADO DE CUENTAS BANCARIAS */}
+        {codigoEdificioActual ? (
+          <CuentasBancarias codigoEdificio={codigoEdificioActual} />
+        ) : (
+          <div className="mt-8 pt-6 border-t border-white/20 flex flex-col items-center justify-center text-white/50 py-4 text-sm text-center">
+            <CreditCard className="w-8 h-8 mb-2 opacity-50" />
+            No pudimos cargar la sección de cuentas bancarias porque tu usuario no tiene un edificio asociado.
+          </div>
+        )}
         
       </div>
     </div>
