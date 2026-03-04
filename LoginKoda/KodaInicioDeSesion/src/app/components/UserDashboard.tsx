@@ -13,6 +13,7 @@ import { PagoService } from '../../services/pago.service';
 import { GastoService } from '../../services/gasto.service';
 import { bcvService } from '../../services/bcv.service';
 import { supabase } from '../../lib/supabase';
+import kodaLogo from '../../assets/LogoKoda4.png';
 
 interface UserDashboardProps {
   onLogout: () => void;
@@ -65,7 +66,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
 
   useEffect(() => {
     const fetchBankData = async () => {
-      if (activeTab === 'finanzas' && userData?.codigo_edificio) {
+      if (activeTab === 'finanzas'|| activeTab === 'inicio' && userData?.codigo_edificio) {
         setIsLoadingBank(true);
         try {
           const { data: edificioData, error: edificioError } = await supabase
@@ -260,7 +261,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
     return parseInt(month) - 1 === selectedMonth.getMonth() && parseInt(year) === selectedMonth.getFullYear();
   });
 
-// FUNCIÓN PARA DESCARGAR EL PDF (NATIVA Y SIN ERRORES)
+// FUNCIÓN PARA DESCARGAR EL PDF (CON LOGO DE IMAGEN)
   const descargarReciboPDF = () => {
     const elemento = document.getElementById('recibo-pdf');
     if (!elemento) return;
@@ -272,16 +273,16 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
       return;
     }
 
-    // Inyectamos el recibo limpio con los estilos esenciales
+    // Inyectamos el recibo con los estilos esenciales y el logo desde tu carpeta assets
     printWindow.document.write(`
       <html>
         <head>
           <title>Recibo_Condominio_Apto_${userData?.apartamento}_${formatMonth(selectedMonth)}</title>
           <style>
-            /* Recreamos lo básico de Tailwind sin oklch */
             body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; margin: 0; }
             .flex { display: flex; }
             .justify-between { justify-content: space-between; }
+            .items-center { align-items: center; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
             .text-left { text-align: left; }
@@ -300,26 +301,53 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             table { width: 100%; border-collapse: collapse; }
             * { box-sizing: border-box; }
             
-            /* Aseguramos que los colores de fondo se impriman en el PDF */
+            /* ESTILOS DEL CONTENEDOR DEL LOGO */
+            .logo-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 30px;
+              padding-bottom: 20px;
+              border-bottom: 2px solid #e5e7eb;
+            }
+            .koda-logo-img {
+              max-height: 60px; /* Ajusta este valor si tu logo es muy grande o muy pequeño */
+              width: auto;
+              object-fit: contain;
+            }
+            .header-text {
+              text-align: right;
+              color: #4b5563;
+              font-size: 12px;
+            }
+
             @media print {
               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             }
           </style>
         </head>
         <body>
+          <div class="logo-header">
+            <img src="${kodaLogo}" alt="Logo Koda" class="koda-logo-img" />
+            <div class="header-text">
+              <strong>Recibo de Condominio</strong><br/>
+              Apto ${userData?.apartamento}
+            </div>
+          </div>
+          
           ${elemento.outerHTML}
         </body>
       </html>
     `);
-    
+
     printWindow.document.close();
     printWindow.focus();
-    
-    // Le damos un respiro al navegador de un cuarto de segundo y mandamos a imprimir/guardar
+
+    // Esperamos un momento a que la imagen se cargue en la ventana antes de imprimir
     setTimeout(() => {
       printWindow.print();
       printWindow.close();
-    }, 250);
+    }, 500); 
   };
   
   return (
@@ -720,7 +748,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             >
               <div className="text-center" style={{ marginBottom: '24px' }}>
                 <h2 className="text-2xl font-bold uppercase tracking-wider" style={{ color: '#000000' }}>Aviso de Cobro</h2>
-                <p className="text-sm" style={{ color: '#4b5563' }}>Condominio {userData.codigo_edificio}</p>
+                <p className="text-sm" style={{ color: '#4b5563' }}>Condominio {datosBanco?.descripcion || userData.codigo_edificio}</p>
               </div>
               
               <div className="flex justify-between text-sm" style={{ borderBottom: '1px solid #e5e7eb', paddingBottom: '16px', marginBottom: '16px' }}>
