@@ -105,9 +105,12 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
   const notifications = [
     { id: 1, type: 'payment', title: 'Pagos Pendientes', description: '3 pagos requieren tu aprobación', time: 'Hace 2 horas', icon: DollarSign, color: 'red', bgColor: 'bg-red-500' },
     { id: 2, type: 'ticket', title: 'Nuevo Ticket', description: 'Reporte de filtración en Apto 304', time: 'Hace 5 horas', icon: Wrench, color: 'orange', bgColor: 'bg-orange-500' },
+    { id: 3, type: 'payment', title: 'Pago Confirmado', description: 'Apto 201 completó su pago mensual', time: 'Hace 1 día', icon: CheckCircle, color: 'green', bgColor: 'bg-green-500' },
+    { id: 4, type: 'vote', title: 'Votación Activa', description: '15 vecinos han votado en la encuesta', time: 'Hace 2 días', icon: Vote, color: 'blue', bgColor: 'bg-blue-500' },
+    { id: 5, type: 'community', title: 'Nuevo Vecino', description: 'Se registró un nuevo copropietario en Apto 506', time: 'Hace 3 días', icon: Users, color: 'purple', bgColor: 'bg-purple-500' },
   ];
 
-  const unreadCount = 2;
+  const unreadCount = 3;
 
   const [expenses, setExpenses] = useState<{ concept: string; total: number; percentage: number }[]>([]);
   const [totalBuildingExpense, setTotalBuildingExpense] = useState(0);
@@ -170,6 +173,28 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
   const documents = [
     { id: 1, title: 'Reglamento de Condominio', type: 'PDF', size: '2.4 MB', date: '15 Ene 2024' },
     { id: 2, title: 'Normas de la Piscina', type: 'PDF', size: '450 KB', date: '20 Mar 2024' },
+    { id: 3, title: 'Horarios de Mudanza', type: 'PDF', size: '120 KB', date: '5 Feb 2025' },
+    { id: 4, title: 'Reglamento de Mascotas', type: 'PDF', size: '890 KB', date: '10 Ago 2024' },
+  ];
+
+  const closedVotes = [
+    { id: 1, title: 'Pintura de Fachada', closedDate: 'Hace 1 mes', result: 'Aprobado', percentage: 70, votes: { yes: 28, no: 12 } },
+    { id: 2, title: 'Instalación de Gimnasio', closedDate: 'Hace 2 meses', result: 'Rechazado', percentage: 35, votes: { yes: 14, no: 26 } },
+    { id: 3, title: 'Aumento de Cuota Mensual', closedDate: 'Hace 3 meses', result: 'Aprobado', percentage: 65, votes: { yes: 26, no: 14 } },
+  ];
+
+  const oldCommuniques = [
+    { id: 1, title: 'Fumigación Programada', date: '10 Ene 2026', category: 'Mantenimiento' },
+    { id: 2, title: 'Cambio de Empresa de Ascensores', date: '5 Dic 2025', category: 'Servicios' },
+    { id: 3, title: 'Cierre de Piscina por Mantenimiento', date: '20 Nov 2025', category: 'Áreas Comunes' },
+    { id: 4, title: 'Nueva Empresa de Vigilancia', date: '15 Oct 2025', category: 'Seguridad' },
+  ];
+
+  const emergencyContacts = [
+    { name: 'Conserjería', phone: '+58 412-1234567' },
+    { name: 'Vigilancia', phone: '+58 412-7654321' },
+    { name: 'Administración', phone: '+58 212-9876543' },
+    { name: 'Emergencias Edificio', phone: '+58 424-5556666' },
   ];
 
   const aliquot = Number(userData?.alicuota) || 0;
@@ -556,6 +581,120 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
           </div>
         </div>
       )}
+      
+      {activeTab === 'comunidad' && (
+        <div className="max-w-4xl mx-auto px-4 py-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
+          
+          {/* Comunicados */}
+          <div className="space-y-4">
+            <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
+              <Megaphone className="w-5 h-5 text-blue-400" /> Comunicados
+            </h2>
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
+              <div className="space-y-3">
+                {oldCommuniques.map(comm => (
+                  <div key={comm.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 hover:bg-white/10 rounded-xl transition-all border border-transparent hover:border-white/10">
+                    <div>
+                      <p className="font-semibold text-white">{comm.title}</p>
+                      <p className="text-sm text-blue-300 font-medium mt-1">{comm.category}</p>
+                    </div>
+                    <span className="text-xs text-white/60 mt-2 sm:mt-0 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 self-start sm:self-center">
+                      {comm.date}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Votaciones */}
+          <div className="space-y-4">
+            <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
+              <Vote className="w-5 h-5 text-purple-400" /> Votaciones Cerradas
+            </h2>
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
+              <div className="space-y-4">
+                {closedVotes.map(vote => (
+                  <div key={vote.id} className="p-4 border border-white/10 rounded-xl bg-black/20">
+                    <div className="flex justify-between items-start mb-3">
+                      <p className="font-semibold text-white">{vote.title}</p>
+                      <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${
+                        vote.result === 'Aprobado' 
+                          ? 'bg-green-500/20 text-green-300 border-green-500/30' 
+                          : 'bg-red-500/20 text-red-300 border-red-500/30'
+                      }`}>
+                        {vote.result}
+                      </span>
+                    </div>
+                    <div className="w-full bg-white/10 rounded-full h-2.5 mb-2 overflow-hidden border border-white/5">
+                      <div className="bg-purple-500 h-2.5 rounded-full" style={{ width: `${vote.percentage}%` }}></div>
+                    </div>
+                    <div className="flex justify-between text-xs text-white/60 font-medium px-1">
+                      <span>{vote.votes.yes} a favor</span>
+                      <span>{vote.percentage}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Documentos */}
+          <div className="space-y-4">
+            <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
+              <FileText className="w-5 h-5 text-orange-400" /> Documentos y Normativas
+            </h2>
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
+              <div className="space-y-3">
+                {documents.map((doc) => (
+                  <button key={doc.id} className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-white/10 transition-all text-left border border-transparent hover:border-white/10">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-red-500/80 p-3 rounded-xl shadow-inner border border-red-400/50">
+                        <FileText className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="text-white font-medium">{doc.title}</h4>
+                        <p className="text-white/60 text-xs mt-1">{doc.size} • {doc.date}</p>
+                      </div>
+                    </div>
+                    <div className="bg-white/5 p-2 rounded-lg hover:bg-white/20 transition-colors">
+                      <Download className="w-5 h-5 text-white/80" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Contactos de Emergencia */}
+          <div className="space-y-4">
+            <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
+              <Phone className="w-5 h-5 text-green-400" /> Contactos de Emergencia
+            </h2>
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {emergencyContacts.map((contact, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-4 bg-black/20 hover:bg-white/5 border border-white/10 rounded-xl transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-green-500/20 p-2 rounded-lg border border-green-500/30">
+                        <Phone className="w-4 h-4 text-green-300" />
+                      </div>
+                      <span className="font-medium text-white">{contact.name}</span>
+                    </div>
+                    <a 
+                      href={`tel:${contact.phone.replace(/\s+/g, '')}`} 
+                      className="text-green-300 font-bold hover:text-green-200 bg-green-500/20 hover:bg-green-500/30 px-4 py-2 rounded-lg text-sm transition-colors border border-green-500/30"
+                    >
+                      Llamar
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
 
 {/* MODAL PARA VER Y DESCARGAR EL RECIBO EN PDF */}
       {isReceiptModalOpen && (
@@ -664,6 +803,11 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
           </div>
         </div>
       )}
+
+      {activeTab === 'perfil' && (
+        <UserProfile userData={userData} onBack={() => setActiveTab('inicio')} highlight={highlightProfile} />
+      )}
+
 
       {/* Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none px-4 pb-6">
