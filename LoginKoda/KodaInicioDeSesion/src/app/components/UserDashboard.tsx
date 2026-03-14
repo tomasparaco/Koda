@@ -13,6 +13,7 @@ import { PagoService } from '../../services/pago.service';
 import { bcvService } from '../../services/bcv.service';
 import { ComunidadService, DocumentoCondominio, ContactoEmergencia } from '../../services/comunidad.service';
 import { CuentaBancariaService, CuentaBancaria } from '../../services/cuenta_bancaria.service';
+import { EncuestaService } from '../../services/encuesta.service'; // <-- IMPORTACIÓN NECESARIA
 import UserProfile from './UserProfile';
 import ReportPaymentModal from './ReportPaymentModal';
 import { LegalTermsModal } from './LegalTermsModal';
@@ -21,6 +22,7 @@ import { ReciboService } from '../../services/recibo.service';
 import kodaLogo from '../../assets/LogoKoda4.png';
 import { TicketService } from '../../services/ticket.service';
 import ReportTicketModal from './ReportTicketModal';
+import UserVotacionesModal from './UserVotacionesModal'; // <-- IMPORTACIÓN DEL MODAL
 
 interface UserDashboardProps {
   onLogout: () => void;
@@ -38,20 +40,22 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
   const [cuentasBancarias, setCuentasBancarias] = useState<CuentaBancaria[]>([]);
   const [isLoadingBank, setIsLoadingBank] = useState(false);
 
-  // NUEVO ESTADO: Controla el Modal del Recibo
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false); // <-- NUEVO ESTADO
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false); 
   const [selectedPaymentProof, setSelectedPaymentProof] = useState<string | null>(null);
   const [currentRecibo, setCurrentRecibo] = useState<any>(null);
 
-  // NUEVO ESTADO: Controla el Modal Rápido de Datos Bancarios en Inicio
   const [isQuickBankModalOpen, setIsQuickBankModalOpen] = useState(false);
 
-  // NUEVO ESTADO: Controla el Modal de Creación de Tickets
   const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
-  const [selectedTicket, setSelectedTicket] = useState<any>(null); // Para ver el detalle del ticket
+  const [selectedTicket, setSelectedTicket] = useState<any>(null); 
   
-  // NUEVO ESTADO: HU-33 Calificacion de Tickets
+  // NUEVO ESTADO: Controla el Modal de Votaciones Activas
+  const [isVotacionesModalOpen, setIsVotacionesModalOpen] = useState(false);
+
+  // NUEVO ESTADO: Guarda las votaciones cerradas para dibujarlas con tu diseño
+  const [votacionesCerradas, setVotacionesCerradas] = useState<any[]>([]);
+
   const [ticketRating, setTicketRating] = useState<number>(0);
   const [ticketRatingComment, setTicketRatingComment] = useState('');
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
@@ -70,7 +74,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
     setIsSubmittingRating(false);
     
     if (result.exito) {
-      // Actualizar localmente
       setSelectedTicket({ ...selectedTicket, calificacion: ticketRating, comentario_calificacion: ticketRatingComment });
       setUserTickets(prev => prev.map(t => 
         t.id_ticket === selectedTicket.id_ticket 
@@ -119,7 +122,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
   const [isHelpOpen, setIsHelpOpen] = useState(false); 
   const [selectedFaq, setSelectedFaq] = useState<number | null>(null);
 
-  // ESTADOS FORMULARIO SOPORTE
   const [supportMessage, setSupportMessage] = useState('');
   const [isSendingSupport, setIsSendingSupport] = useState(false);
 
@@ -166,7 +168,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isLegalTermsOpen, setIsLegalTermsOpen] = useState(false);
 
-  // Para asegurar que la multiplicación cuadre con los valores que el usuario ve redondeados a 2 decimales:
   const roundedBcvRate = Math.round(bcvRate * 100) / 100;
   const roundedBalance = Math.round(balance * 100) / 100;
   const bolivares = roundedBalance * roundedBcvRate;
@@ -279,16 +280,13 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
     }
   }, [userData?.id_propietario, activeTab, isPaymentModalOpen]);
 
-  // NUEVO ESTADO PARA COMUNIDAD
   const [documents, setDocuments] = useState<DocumentoCondominio[]>([]);
   const [emergencyContacts, setEmergencyContacts] = useState<ContactoEmergencia[]>([]);
   const [previewDoc, setPreviewDoc] = useState<DocumentoCondominio | null>(null);
 
-  // NUEVO: TICKETS DEL USUARIO
   const [userTickets, setUserTickets] = useState<any[]>([]);
   const [ticketUserFilter, setTicketUserFilter] = useState<'todos' | 'abierto' | 'en_proceso' | 'cerrado' | 'rechazado'>('todos');
 
-  // Descargar archivo automáticamente como blob
   const handleDownload = async (url: string, titulo: string) => {
     try {
       const response = await fetch(url);
@@ -302,7 +300,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
     } catch (e) {
-      // Fallback: open in new tab
       window.open(url, '_blank');
     }
   };
@@ -315,12 +312,17 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
 
         const resContacts = await ComunidadService.getContactos(userData.codigo_edificio);
         if (resContacts.exito) setEmergencyContacts(resContacts.data);
+        
+        // Cargar Votaciones Cerradas reales
+        const resVotos = await EncuestaService.getEncuestas(userData.codigo_edificio);
+        if (resVotos) {
+          setVotacionesCerradas(resVotos.filter(enc => !enc.activa));
+        }
       };
       fetchComunidad();
     }
-  }, [userData?.codigo_edificio]);
+  }, [userData?.codigo_edificio, isVotacionesModalOpen]); // Se actualiza si cierra el modal de votar
 
-  // Cargar tickets del usuario
   useEffect(() => {
     if (userData?.id_propietario) {
       const fetchTickets = async () => {
@@ -332,12 +334,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
       fetchTickets();
     }
   }, [userData?.id_propietario, isTicketModalOpen, activeTab]);
-
-  const closedVotes = [
-    { id: 1, title: 'Pintura de Fachada', closedDate: 'Hace 1 mes', result: 'Aprobado', percentage: 70, votes: { yes: 28, no: 12 } },
-    { id: 2, title: 'Instalación de Gimnasio', closedDate: 'Hace 2 meses', result: 'Rechazado', percentage: 35, votes: { yes: 14, no: 26 } },
-    { id: 3, title: 'Aumento de Cuota Mensual', closedDate: 'Hace 3 meses', result: 'Aprobado', percentage: 65, votes: { yes: 26, no: 14 } },
-  ];
 
   const oldCommuniques = [
     { id: 1, title: 'Fumigación Programada', date: '10 Ene 2026', category: 'Mantenimiento' },
@@ -410,19 +406,16 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
     return parseInt(month) - 1 === selectedMonth.getMonth() && parseInt(year) === selectedMonth.getFullYear();
   });
 
-// FUNCIÓN PARA DESCARGAR EL PDF (CON LOGO DE IMAGEN)
   const descargarReciboPDF = () => {
     const elemento = document.getElementById('recibo-pdf');
     if (!elemento) return;
 
-    // Abrimos una ventana temporal en segundo plano
     const printWindow = window.open('', '', 'width=800,height=900');
     if (!printWindow) {
       alert("Por favor, permite las ventanas emergentes (pop-ups) en tu navegador para descargar el recibo.");
       return;
     }
 
-    // Inyectamos el recibo con los estilos esenciales y el logo desde tu carpeta assets
     printWindow.document.write(`
       <html>
         <head>
@@ -450,7 +443,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             table { width: 100%; border-collapse: collapse; }
             * { box-sizing: border-box; }
             
-            /* ESTILOS DEL CONTENEDOR DEL LOGO */
             .logo-header {
               display: flex;
               justify-content: space-between;
@@ -460,7 +452,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
               border-bottom: 2px solid #e5e7eb;
             }
             .koda-logo-img {
-              max-height: 60px; /* Ajusta este valor si tu logo es muy grande o muy pequeño */
+              max-height: 60px; 
               width: auto;
               object-fit: contain;
             }
@@ -492,7 +484,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
     printWindow.document.close();
     printWindow.focus();
 
-    // Esperamos un momento a que la imagen se cargue en la ventana antes de imprimir
     setTimeout(() => {
       printWindow.print();
       printWindow.close();
@@ -590,6 +581,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
       <ReportTicketModal isOpen={isTicketModalOpen} onClose={() => setIsTicketModalOpen(false)} userData={userData} onSuccess={() => {
         setActiveTab('comunidad'); 
       }} />
+      <UserVotacionesModal isOpen={isVotacionesModalOpen} onClose={() => setIsVotacionesModalOpen(false)} userData={userData} />
 
       {/* VISTA PRINCIPAL (INICIO) */}
       {activeTab === 'inicio' && (
@@ -615,7 +607,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                   <p className="text-white/90 text-lg">¡No tienes pagos pendientes!</p>
                 )}
                 
-                {/* BOTÓN DE VER RECIBO SI ESTÁ SOLVENTE */}
                 <button onClick={() => setIsReceiptModalOpen(true)} className="mt-4 w-full bg-green-700 text-white font-bold py-4 rounded-2xl border border-green-500 hover:bg-green-800 transition-all shadow-lg flex items-center justify-center gap-2">
                   <FileText className="w-5 h-5" /> VER RECIBO ACTUAL
                 </button>
@@ -636,7 +627,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                   </div>
                 </div>
 
-                {/* BOTONERA: REPORTAR PAGO Y VER RECIBO */}
                 <div className="flex flex-col sm:flex-row gap-3">
                   <button onClick={() => setIsPaymentModalOpen(true)} className="flex-1 bg-white text-red-700 font-bold py-4 rounded-2xl hover:bg-red-50 transition-all shadow-lg transform hover:scale-[1.02] active:scale-[0.98]">
                     REPORTAR PAGO
@@ -649,9 +639,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             )}
           </div>
 
-          {/* Modales globales movidos arriba */}
-
-          {/* ... (Resto de tus Accesos Rápidos, Gestiones, etc. Se mantiene igual) */}
           <div className="grid grid-cols-3 gap-4">
             <button onClick={() => setIsTicketModalOpen(true)} className={`bg-white/10 backdrop-blur-lg rounded-2xl p-6 hover:bg-white/20 transition-all border border-white/20 shadow-lg ${highlightFault ? 'ring-2 ring-yellow-300 animate-pulse' : ''}`}>
               <div className="flex flex-col items-center gap-3">
@@ -673,7 +660,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             </button>
           </div>
           
-          {/* MODAL VISTA RÁPIDA DE DATOS BANCARIOS */}
           <Dialog open={isQuickBankModalOpen} onOpenChange={setIsQuickBankModalOpen}>
             <DialogContent className="sm:max-w-md bg-slate-900 border-white/10">
               <DialogHeader>
@@ -720,10 +706,9 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                   </div>
                 )}
               </div>
-              {/* Fin Modal Rápido */}
             </DialogContent>
           </Dialog>
-          {/* Lo que está pasando */}
+
           <div className="space-y-4">
             <h2 className="text-white text-xl font-semibold px-2">Lo que está pasando</h2>
             <div className="space-y-3">
@@ -743,8 +728,8 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                   <div className="bg-purple-500 p-3 rounded-xl shrink-0"><Vote className="w-5 h-5 text-white" /></div>
                   <div className="flex-1">
                     <h3 className="text-white font-semibold mb-1">Votación Activa</h3>
-                    <p className="text-white/70 text-sm mb-3">¿Estás de acuerdo con implementar cámaras de seguridad en el área de estacionamiento?</p>
-                    <button className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-6 rounded-lg transition-colors">
+                    <p className="text-white/70 text-sm mb-3">Toma de decisiones de la asamblea en curso.</p>
+                    <button onClick={() => setIsVotacionesModalOpen(true)} className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-6 rounded-lg transition-colors">
                       VOTAR AHORA
                     </button>
                   </div>
@@ -764,7 +749,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             </div>
           </div>
 
-          {/* Mis Gestiones (Últimos 3 tickets) */}
           <div className="space-y-4">
             <div className="flex justify-between items-center px-2">
               <h2 className="text-white text-xl font-semibold">Mis Gestiones</h2>
@@ -803,7 +787,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
         </div>
       )}
 
-      {/* PESTAÑA FINANZAS Y COMUNIDAD (Minimizadas para respetar tu código) */}
+      {/* VISTA FINANZAS */}
       {activeTab === 'finanzas' && (
         <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/20">
@@ -846,11 +830,8 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             </div>
           </div>
           
-          {/* Historial de Pagos */}
           <div className="space-y-4">
             <h2 className="text-white text-xl px-2">Historial de Pagos</h2>
-            
-            {/* Filtros */}
             <div className="flex flex-wrap gap-2 px-2">
               {['todos', 'aprobado', 'pendiente', 'rechazado'].map((filter) => (
                 <button
@@ -867,7 +848,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
               ))}
             </div>
 
-            {/* Lista de Pagos */}
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 border border-white/20">
               {isLoadingPayments ? (
                 <p className="text-white/60 text-center py-4">Cargando pagos...</p>
@@ -929,7 +909,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             </div>
           </div>
 
-          {/* Historial y Datos Bancarios que ya arreglamos */}
           <div className={`bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20 ${highlightBank ? 'ring-2 ring-yellow-300 animate-pulse' : ''}`}>
             <h3 className="text-white mb-4 flex items-center gap-2"><CreditCard className="w-5 h-5" /> Datos Bancarios para Pagos</h3>
             {isLoadingBank ? (
@@ -970,103 +949,89 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
         </div>
       )}
       
+      {/* VISTA COMUNIDAD */}
       {activeTab === 'comunidad' && (
         <div className="max-w-4xl mx-auto px-4 py-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
           
-          {/* Mis Tickets Reportados */}
+          {/* VOTACIONES CERRADAS CON DATOS REALES DE LA BDD (¡Diseño Original Mantenido!) */}
           <div className="space-y-4">
-            <div className="flex justify-between items-center px-2">
+            <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
+              <Vote className="w-5 h-5 text-purple-400" /> Votaciones Cerradas
+            </h2>
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
+              <div className="space-y-4">
+                {votacionesCerradas.length === 0 ? (
+                  <p className="text-white/50 text-sm text-center py-4">No hay votaciones cerradas en este momento.</p>
+                ) : (
+                  votacionesCerradas.map(vote => {
+                    // Adaptamos los datos reales al diseño de la foto
+                    const totalVotos = vote.votos?.length || 0;
+                    
+                    // Contamos los votos 'Sí' (o la primera opción si no hay 'Sí') para definir si se aprobó
+                    const votosSi = vote.votos?.filter((v: any) => v.opcion_seleccionada.toLowerCase() === 'sí' || v.opcion_seleccionada.toLowerCase() === 'si').length || 0;
+                    const percentage = totalVotos === 0 ? 0 : Math.round((votosSi / totalVotos) * 100);
+                    const result = percentage >= 50 ? 'Aprobado' : 'Rechazado';
+
+                    return (
+                      <div key={vote.id} className="p-4 border border-white/10 rounded-xl bg-black/20">
+                        <div className="flex justify-between items-start mb-3">
+                          <p className="font-semibold text-white pr-4">{vote.pregunta}</p>
+                          <span className={`px-3 py-1 rounded-lg text-xs font-bold border shrink-0 ${
+                            result === 'Aprobado' 
+                              ? 'bg-green-500/20 text-green-300 border-green-500/30' 
+                              : 'bg-red-500/20 text-red-300 border-red-500/30'
+                          }`}>
+                            {result}
+                          </span>
+                        </div>
+                        <div className="w-full bg-white/10 rounded-full h-2.5 mb-2 overflow-hidden border border-white/5">
+                          <div className="bg-purple-500 h-2.5 rounded-full" style={{ width: `${percentage}%` }}></div>
+                        </div>
+                        <div className="flex justify-between text-xs text-white/60 font-medium px-1">
+                          <span>{votosSi} a favor</span>
+                          <span>{percentage}%</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex justify-between items-center px-2 mt-8">
               <h2 className="text-white text-xl font-semibold flex items-center gap-2">
-                <Wrench className="w-5 h-5 text-orange-400" /> Mis Tickets Reportados
+                <Wrench className="w-5 h-5 text-orange-400" /> Mis Tickets
               </h2>
-              <button 
-                onClick={() => setIsTicketModalOpen(true)}
-                className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-1.5 shadow-lg shadow-orange-500/20"
-              >
+              <button onClick={() => setIsTicketModalOpen(true)} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 shadow-lg">
                 <Plus className="w-4 h-4" /> Nuevo
               </button>
             </div>
             
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
-
-               {/* Barra de filtros con contadores */}
-               <div className="flex flex-wrap gap-2 mb-4">
-                 {([
-                   { key: 'todos',      label: 'Todos',       color: 'text-white',         bg: 'bg-white/10 hover:bg-white/20',         active: 'bg-white/20 border-white/40' },
-                   { key: 'abierto',    label: 'Abiertos',    color: 'text-red-400',        bg: 'bg-red-500/10 hover:bg-red-500/20',     active: 'bg-red-500/20 border-red-400' },
-                   { key: 'en_proceso', label: 'En Proceso',  color: 'text-yellow-400',     bg: 'bg-yellow-500/10 hover:bg-yellow-500/20', active: 'bg-yellow-500/20 border-yellow-400' },
-                   { key: 'cerrado',    label: 'Cerrados',    color: 'text-green-400',      bg: 'bg-green-500/10 hover:bg-green-500/20', active: 'bg-green-500/20 border-green-400' },
-                   { key: 'rechazado',  label: 'Rechazados',  color: 'text-white/50',       bg: 'bg-white/5 hover:bg-white/10',          active: 'bg-white/10 border-white/30' },
-                 ] as const).map(f => {
-                   const count = f.key === 'todos' ? userTickets.length : userTickets.filter(t => t.estado === f.key).length;
-                   const isActive = ticketUserFilter === f.key;
-                   return (
-                     <button
-                       key={f.key}
-                       onClick={() => setTicketUserFilter(f.key)}
-                       className={`flex flex-col items-center justify-center min-w-[72px] px-4 py-2 rounded-xl border transition-all text-center ${
-                         isActive ? `${f.active} border` : `${f.bg} border-transparent`
-                       }`}
-                     >
-                       <span className={`text-xl font-bold ${f.color}`}>{count}</span>
-                       <span className={`text-[10px] font-semibold tracking-wide uppercase ${f.color} opacity-80`}>{f.label}</span>
-                     </button>
-                   );
-                 })}
-               </div>
-
                {userTickets.length === 0 ? (
                 <div className="text-center py-6">
-                  <div className="bg-white/5 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 border border-white/10">
-                    <Wrench className="w-8 h-8 text-white/30" />
-                  </div>
                   <p className="text-white/70 font-medium">No has reportado ninguna falla aún.</p>
-                  <p className="text-white/40 text-sm mt-1">Si notas algún problema en las áreas comunes, repórtalo aquí.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {userTickets.filter(t => ticketUserFilter === 'todos' || t.estado === ticketUserFilter).length === 0 ? (
-                    <div className="text-center py-6">
-                      <p className="text-white/50 text-sm">No tienes tickets con este estado.</p>
-                    </div>
-                  ) : (
-                    userTickets
-                      .filter(t => ticketUserFilter === 'todos' || t.estado === ticketUserFilter)
-                      .map(ticket => (
-                    <div 
-                      key={ticket.id_ticket} 
-                      onClick={() => setSelectedTicket(ticket)}
-                      className="p-4 bg-black/20 hover:bg-white/5 border border-white/10 hover:border-white/20 rounded-xl transition-all cursor-pointer group"
-                    >
+                  {userTickets.map(ticket => (
+                    <div key={ticket.id_ticket} onClick={() => setSelectedTicket(ticket)} className="p-4 bg-black/20 hover:bg-white/5 border border-white/10 rounded-xl cursor-pointer">
                       <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-semibold text-white group-hover:text-orange-300 transition-colors pr-4">{ticket.titulo}</h3>
+                        <h3 className="font-semibold text-white pr-4">{ticket.titulo}</h3>
                         <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-bold border ${getTicketStatusColor(ticket.estado)}`}>
                           {getTicketStatusText(ticket.estado)}
                         </span>
                       </div>
-                      
                       <p className="text-white/60 text-sm line-clamp-2 mb-3">{ticket.descripcion}</p>
-                      
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-white/50 border-t border-white/5 pt-3">
-                        <div className="flex items-center gap-3">
-                          <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {new Date(ticket.created_at).toLocaleDateString()}</span>
-                          {ticket.ubicacion && <span className="flex items-center gap-1"><Building2 className="w-3.5 h-3.5" /> {ticket.ubicacion}</span>}
-                        </div>
-                        {ticket.nota_admin && (
-                          <span className="flex items-center gap-1 text-blue-300 font-medium bg-blue-500/10 px-2 py-0.5 rounded">
-                            <Mail className="w-3.5 h-3.5" /> Respuesta del Admin
-                          </span>
-                        )}
-                      </div>
                     </div>
-                      ))
-                  )}
+                  ))}
                 </div>
               )}
             </div>
           </div>
           
-          {/* Modal Detalle Ticket */}
           <Dialog open={!!selectedTicket} onOpenChange={() => setSelectedTicket(null)}>
             {selectedTicket && (
               <DialogContent className="sm:max-w-lg bg-slate-900 border-white/20 p-0 overflow-hidden">
@@ -1123,7 +1088,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                         </h4>
                         <p className="text-white/90 text-sm italic">{selectedTicket.nota_admin}</p>
                         
-                        {/* HU-34: Evidencia de Resolución del Administrador */}
                         {selectedTicket.foto_resolucion_url && (
                            <div className="mt-3 pt-3 border-t border-blue-500/20">
                              <a href={selectedTicket.foto_resolucion_url} target="_blank" rel="noreferrer" className="block max-w-xs overflow-hidden rounded-lg border border-blue-500/30 hover:opacity-90 transition-opacity">
@@ -1136,7 +1100,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                     </div>
                   )}
 
-                  {/* HU-33: Calificación de Ticket Cerrado */}
                   {selectedTicket.estado === 'cerrado' && (
                     <div className="mt-4 pt-4 border-t border-white/10">
                       <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border border-orange-500/20 rounded-xl p-5">
@@ -1145,7 +1108,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                         </h4>
                         
                         {selectedTicket.calificacion ? (
-                          // Vista de Solo Lectura (Ya calificado)
                           <div className="space-y-3">
                             <div className="flex gap-1 justify-center">
                               {[1, 2, 3, 4, 5].map((star) => (
@@ -1163,7 +1125,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                             <p className="text-center text-xs text-orange-200 mt-2">Gracias por tu retroalimentación.</p>
                           </div>
                         ) : (
-                          // Vista Interactiva (Para calificar)
                           <div className="space-y-4">
                             <div className="flex justify-center gap-2">
                               {[1, 2, 3, 4, 5].map((star) => (
@@ -1209,7 +1170,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             )}
           </Dialog>
 
-          {/* Comunicados */}
           <div className="space-y-4">
             <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
               <Megaphone className="w-5 h-5 text-blue-400" /> Comunicados
@@ -1231,50 +1191,15 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             </div>
           </div>
 
-          {/* Votaciones */}
-          <div className="space-y-4">
-            <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
-              <Vote className="w-5 h-5 text-purple-400" /> Votaciones Cerradas
-            </h2>
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
-              <div className="space-y-4">
-                {closedVotes.map(vote => (
-                  <div key={vote.id} className="p-4 border border-white/10 rounded-xl bg-black/20">
-                    <div className="flex justify-between items-start mb-3">
-                      <p className="font-semibold text-white">{vote.title}</p>
-                      <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${
-                        vote.result === 'Aprobado' 
-                          ? 'bg-green-500/20 text-green-300 border-green-500/30' 
-                          : 'bg-red-500/20 text-red-300 border-red-500/30'
-                      }`}>
-                        {vote.result}
-                      </span>
-                    </div>
-                    <div className="w-full bg-white/10 rounded-full h-2.5 mb-2 overflow-hidden border border-white/5">
-                      <div className="bg-purple-500 h-2.5 rounded-full" style={{ width: `${vote.percentage}%` }}></div>
-                    </div>
-                    <div className="flex justify-between text-xs text-white/60 font-medium px-1">
-                      <span>{vote.votes.yes} a favor</span>
-                      <span>{vote.percentage}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Documentos */}
           <div className="space-y-4">
             <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
               <FileText className="w-5 h-5 text-orange-400" /> Documentos y Normativas
             </h2>
 
-            {/* Preview Modal */}
             {previewDoc && (
               <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-8">
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setPreviewDoc(null)} />
                 <div className="relative bg-[#0f172a] rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-white/20 overflow-hidden">
-                  {/* Header */}
                   <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-5 py-4 flex items-center justify-between shrink-0">
                     <h3 className="text-white font-semibold flex items-center gap-2 truncate">
                       <FileText className="w-5 h-5 shrink-0" /> {previewDoc.titulo}
@@ -1291,7 +1216,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                       </button>
                     </div>
                   </div>
-                  {/* Content */}
                   <div className="flex-1 overflow-hidden bg-black/40 min-h-[60vh]">
                     {previewDoc.formato === 'PDF' ? (
                       <iframe
@@ -1359,7 +1283,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             </div>
           </div>
 
-          {/* Contactos de Emergencia */}
           <div className="space-y-4">
             <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
               <Phone className="w-5 h-5 text-green-400" /> Contactos de Emergencia
@@ -1393,10 +1316,8 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
         </div>
       )}
 
-      {/* PESTAÑA DE AYUDA / FAQ */}
       {activeTab === 'ayuda' && (
         <div className="max-w-4xl mx-auto px-4 py-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
-          
           <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
             <div className="relative z-10 flex flex-col items-center text-center">
               <div className="bg-white/20 p-4 rounded-full mb-4 backdrop-blur-sm border border-white/30">
@@ -1487,19 +1408,15 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
         </div>
       )}
 
-{/* MODAL PARA VER Y DESCARGAR EL RECIBO EN PDF */}
       {isReceiptModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 py-8">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsReceiptModalOpen(false)} />
           <div className="relative bg-white rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col max-h-full overflow-hidden">
-            
-            {/* Header del Modal */}
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex items-center justify-between shrink-0">
               <h3 className="text-white text-lg font-semibold flex items-center gap-2">
                 <FileText className="w-5 h-5" /> Tu Recibo
               </h3>
 
-              {/* Selector de mes para el recibo */}
               <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full ml-auto mr-4">
                 <button onClick={() => changeMonth(-1)} className="p-1 rounded-full hover:bg-white/20 transition-all">
                   <ChevronLeft className="w-4 h-4 text-white" />
@@ -1517,7 +1434,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
               </button>
             </div>
             
-            {/* Cuerpo del Recibo (Cero clases de color de Tailwind para evitar el error oklch) */}
             <div 
               id="recibo-pdf" 
               className="p-8 font-sans w-full max-w-2xl mx-auto overflow-y-auto custom-scrollbar" 
@@ -1590,7 +1506,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
               </p>
             </div>
 
-            {/* Footer con el botón de Descargar (AQUÍ ESTÁ EL BOTÓN QUE FALTABA) */}
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end shrink-0">
               <button 
                 onClick={descargarReciboPDF} 
@@ -1609,7 +1524,6 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
         </div>
       )}
 
-      {/* MODAL PARA VER COMPROBANTE DE PAGO */}
       {selectedPaymentProof && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-8">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedPaymentProof(null)} />

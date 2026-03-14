@@ -1,4 +1,3 @@
-// src/app/components/DashboardLayout.tsx
 import { useState } from 'react';
 import { Menu, Bell, User, X, Settings, HelpCircle, FileText, LogOut, Home, Wallet, UsersRound, Users, AlertCircle, Wrench, DollarSign, Vote } from 'lucide-react';
 // Asegúrate de que las rutas a tus vistas sean correctas según tu estructura
@@ -7,6 +6,7 @@ import { FinanzasView } from './FinanzasView';
 import { ComunidadView } from './ComunidadView';
 import { UsuariosView } from './UsuariosView';
 import { SettingsView } from './SettingsView';
+import AdminVotaciones from './AdminVotaciones'; // <--- IMPORTACIÓN DE LA NUEVA VISTA
 import { LegalTermsModal } from '../components/LegalTermsModal';
 import type { Propietario } from '../../types';
 
@@ -54,11 +54,19 @@ export default function DashboardLayout({ propiedad, onLogout, onBackToSelector 
 
       {/* Main Content */}
       <main className="px-6 pb-32 max-w-4xl mx-auto pt-6">
-        {activeTab === 'inicio' && <InicioView propiedad={propiedad} onNavigateToConciliacion={() => setActiveTab('finanzas')} onNavigateToTickets={() => setActiveTab('comunidad')} />}
+        {/* AQUI PASAMOS LAS RUTAS A LOS BOTONES DEL INICIO */}
+        {activeTab === 'inicio' && (
+          <InicioView 
+            propiedad={propiedad} 
+            onNavigateToConciliacion={() => setActiveTab('finanzas')} 
+            onNavigateToTickets={() => setActiveTab('comunidad')} 
+            onNavigateToVotaciones={() => setActiveTab('votaciones')} 
+          />
+        )}
         {activeTab === 'finanzas' && <FinanzasView propiedad={propiedad} />}
         {activeTab === 'comunidad' && <ComunidadView propiedad={propiedad} />}
-        {/* AQUÍ ES DONDE PASAMOS LA PROPIEDAD A LA VISTA DE USUARIOS */}
         {activeTab === 'usuarios' && <UsuariosView propiedad={propiedad} />}
+        {activeTab === 'votaciones' && <AdminVotaciones />}
         {activeTab === 'configuracion' && <SettingsView />}
       </main>
 
@@ -103,7 +111,7 @@ export default function DashboardLayout({ propiedad, onLogout, onBackToSelector 
         </div>
       </div>
 
-      {/* Panel de Notificaciones (Minimizado para no hacer el código gigante, mantén el tuyo si le hiciste cambios) */}
+      {/* Panel de Notificaciones */}
       {isNotificationsOpen && (
         <>
           <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setIsNotificationsOpen(false)}></div>
@@ -143,7 +151,8 @@ export default function DashboardLayout({ propiedad, onLogout, onBackToSelector 
               </div>
             </div>
             <nav className="flex-1 p-4 text-gray-700">
-              <button onClick={() => setActiveTab('configuracion')} className="w-full flex items-center gap-3 p-4 hover:bg-gray-100 rounded-lg transition-colors">
+              {/* Eliminado el botón lateral de votaciones como pediste */}
+              <button onClick={() => { setActiveTab('configuracion'); setIsDrawerOpen(false); }} className="w-full flex items-center gap-3 p-4 hover:bg-gray-100 rounded-lg transition-colors">
                 <Settings className="w-5 h-5" />
                 <span className="font-medium">Configuración</span>
               </button>
@@ -151,7 +160,7 @@ export default function DashboardLayout({ propiedad, onLogout, onBackToSelector 
                 <HelpCircle className="w-5 h-5" />
                 <span className="font-medium">Ayuda</span>
               </button>
-              <button onClick={() => setIsLegalTermsOpen(true)} className="w-full flex items-center gap-3 p-4 hover:bg-gray-100 rounded-lg transition-colors">
+              <button onClick={() => { setIsLegalTermsOpen(true); setIsDrawerOpen(false); }} className="w-full flex items-center gap-3 p-4 hover:bg-gray-100 rounded-lg transition-colors">
                 <FileText className="w-5 h-5" />
                 <span className="font-medium">Términos Legales</span>
               </button>

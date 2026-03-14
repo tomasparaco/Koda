@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Vote, Plus, X, FileText, CheckCircle, BarChart3, AlertCircle } from 'lucide-react';
+import { Vote, Plus, X, FileText, CheckCircle, BarChart3, AlertCircle, Upload } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { EncuestaService } from '../../services/encuesta.service';
 import { Button } from '../components/ui/button';
@@ -12,11 +12,13 @@ export default function AdminVotaciones() {
   const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Formulario
   const [pregunta, setPregunta] = useState('');
-  const [opciones, setOpciones] = useState(['Sí', 'No', 'Abstención']); // Default
+  const [opciones, setOpciones] = useState(['Sí', 'No', 'Abstención']);
   const [fechaCierre, setFechaCierre] = useState('');
+  
+  // Archivos
   const [archivo, setArchivo] = useState<File | null>(null);
+  const [archivoPreview, setArchivoPreview] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -41,15 +43,26 @@ export default function AdminVotaciones() {
 
   const cargarEncuestas = async (codigo: string) => {
     const data = await EncuestaService.getEncuestas(codigo);
-    // Verificamos si alguna caducó por tiempo y la cerramos en la vista
     const actualizadas = data.map(enc => {
         if (enc.activa && new Date(enc.fecha_cierre) < new Date()) {
             enc.activa = false;
-            EncuestaService.cerrarEncuesta(enc.id); // Cierre automático
+            EncuestaService.cerrarEncuesta(enc.id);
         }
         return enc;
     });
     setEncuestas(actualizadas);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      setArchivo(file);
+      if (file.type.startsWith('image/')) {
+        setArchivoPreview(URL.createObjectURL(file));
+      } else {
+        setArchivoPreview('pdf');
+      }
+    }
   };
 
   const handleCrear = async () => {
@@ -62,9 +75,10 @@ export default function AdminVotaciones() {
       setIsCreating(false);
       setPregunta('');
       setArchivo(null);
+      setArchivoPreview(null);
       setFechaCierre('');
       cargarEncuestas(codigoEdificio);
-      alert('Encuesta creada y notificación enviada a los usuarios.');
+      alert('Encuesta creada exitosamente.');
     } else {
       alert('Error: ' + res.mensaje);
     }
@@ -92,13 +106,13 @@ export default function AdminVotaciones() {
       </div>
 
       {isCreating && (
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 shadow-xl space-y-4">
+        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 shadow-xl space-y-6">
           <div>
             <Label className="text-white/80">Pregunta o Tema a Votar</Label>
             <Input value={pregunta} onChange={e => setPregunta(e.target.value)} placeholder="Ej. ¿Aprobar el presupuesto de pintura?" className="bg-white/5 border-white/10 text-white mt-1" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <Label className="text-white/80">Opciones de Respuesta</Label>
               <div className="space-y-2 mt-1">
@@ -114,20 +128,51 @@ export default function AdminVotaciones() {
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <Label className="text-white/80">Fecha límite de cierre</Label>
-                <Input type="datetime-local" value={fechaCierre} onChange={e => setFechaCierre(e.target.value)} className="bg-white/5 border-white/10 text-white mt-1" />
-              </div>
-              <div>
-                <Label className="text-white/80">Documento Soporte (Presupuesto/PDF/Img)</Label>
-                <Input type="file" onChange={e => setArchivo(e.target.files?.[0] || null)} className="bg-white/5 border-white/10 text-white mt-1" />
-              </div>
+            <div>
+              <Label className="text-white/80">Fecha límite de cierre</Label>
+              <Input type="datetime-local" value={fechaCierre} onChange={e => setFechaCierre(e.target.value)} className="bg-white/5 border-white/10 text-white mt-1" />
             </div>
           </div>
           
-          <Button onClick={handleCrear} disabled={loading} className="w-full bg-green-600 hover:bg-green-700 text-white mt-4">
-            {loading ? 'Creando y notificando...' : 'Publicar Encuesta'}
+          {/* NUEVO BOTÓN DE ARCHIVO (Req 1) */}
+          <div className="pt-4 border-t border-white/10">
+            <Label className="text-white/80 block mb-2">Documento Soporte (Opcional)</Label>
+            {!archivo ? (
+              <div className="flex justify-center px-6 pt-5 pb-6 border-2 border-white/20 border-dashed rounded-xl bg-white/5 hover:bg-white/10 transition-colors">
+                <div className="space-y-1 text-center">
+                  <Upload className="mx-auto h-8 w-8 text-white/50 mb-3" />
+                  <div className="flex text-sm text-blue-200 justify-center">
+                    <Label htmlFor="file-upload" className="relative cursor-pointer rounded-md font-medium text-blue-400 hover:text-blue-300">
+                      <span>Añadir archivo</span>
+                      <input id="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept=".pdf,image/*" />
+                    </Label>
+                  </div>
+                  <p className="text-xs text-white/40 mt-1">PDF o Imágenes</p>
+                </div>
+              </div>
+            ) : (
+              <div className="relative w-full h-32 border border-white/20 rounded-xl overflow-hidden bg-black/40 flex items-center justify-center group">
+                {archivoPreview === 'pdf' ? (
+                  <div className="flex flex-col items-center text-white">
+                    <FileText className="w-10 h-10 text-red-400 mb-2" />
+                    <span className="text-sm font-medium">{archivo.name}</span>
+                  </div>
+                ) : (
+                  <img src={archivoPreview!} alt="Vista previa" className="w-full h-full object-contain" />
+                )}
+                
+                {/* Overlay para borrar */}
+                <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3">
+                  <button onClick={() => { setArchivo(null); setArchivoPreview(null); }} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    Eliminar archivo
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <Button onClick={handleCrear} disabled={loading} className="w-full bg-green-600 hover:bg-green-700 text-white mt-4 py-6 text-lg">
+            {loading ? 'Publicando...' : 'Publicar Encuesta'}
           </Button>
         </div>
       )}
@@ -164,7 +209,6 @@ export default function AdminVotaciones() {
                 </a>
               )}
 
-              {/* Gráficos de Resultados */}
               <div className="space-y-3 mt-4">
                 <p className="text-white/70 text-sm mb-2 flex items-center gap-2"><BarChart3 className="w-4 h-4"/> Resultados (Total: {totalVotos} votos)</p>
                 {enc.opciones.map((op: string) => {

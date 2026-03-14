@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { ComunidadService, DocumentoCondominio, ContactoEmergencia } from '../../services/comunidad.service';
 import { TicketService, Ticket } from '../../services/ticket.service';
+import { EncuestaService } from '../../services/encuesta.service'; // <-- SERVICIO REAL IMPORTADO
 import type { Propietario } from '../../types';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -12,6 +13,7 @@ import { Label } from '../components/ui/label';
 
 interface ComunidadViewProps {
   propiedad: Propietario;
+  onNavigateToVotaciones?: () => void; // <-- PARA EL ENLACE AL CREADOR DE ENCUESTAS
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -29,7 +31,7 @@ interface ConfirmState {
   onConfirm: () => void;
 }
 
-export function ComunidadView({ propiedad }: ComunidadViewProps) {
+export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadViewProps) {
   const [subTab, setSubTab] = useState<'comunicados' | 'votaciones' | 'tickets' | 'configuraciones'>('comunicados');
 
   // ── Toasts ──────────────────────────────────────────────────────────────────
@@ -58,11 +60,10 @@ export function ComunidadView({ propiedad }: ComunidadViewProps) {
     { id: 2, titulo: 'Reunión de Junta Directiva', fecha: '2026-02-05', vistos: 28, total: 30 },
     { id: 3, titulo: 'Mantenimiento de Ascensores', fecha: '2026-02-01', vistos: 30, total: 30 },
   ];
-  const votaciones = [
-    { id: 1, pregunta: '¿Aprobar pintura de fachada?', activa: true, si: 18, no: 7, abstenciones: 5, total: 30 },
-    { id: 2, pregunta: '¿Instalar cámaras de seguridad?', activa: true, si: 22, no: 4, abstenciones: 4, total: 30 },
-    { id: 3, pregunta: '¿Cambiar empresa de limpieza?', activa: false, si: 15, no: 12, abstenciones: 3, total: 30 },
-  ];
+  
+  // <-- AQUÍ GUARDAMOS LAS VOTACIONES REALES DE LA BDD
+  const [votacionesReales, setVotacionesReales] = useState<any[]>([]);
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
 
   const getEstadoColor = (estado: string) => {
@@ -102,8 +103,23 @@ export function ComunidadView({ propiedad }: ComunidadViewProps) {
   const [ticketEvidenciaArchivo, setTicketEvidenciaArchivo] = useState<File | null>(null);
 
   useEffect(() => {
-    if (propiedad.codigo_edificio) cargarConfiguraciones();
+    if (propiedad.codigo_edificio) {
+      cargarConfiguraciones();
+      cargarVotacionesReales();
+    }
   }, [propiedad.codigo_edificio]);
+
+  const cargarVotacionesReales = async () => {
+    const data = await EncuestaService.getEncuestas(propiedad.codigo_edificio!);
+    const actualizadas = data.map(enc => {
+      if (enc.activa && new Date(enc.fecha_cierre) < new Date()) {
+        enc.activa = false;
+        EncuestaService.cerrarEncuesta(enc.id);
+      }
+      return enc;
+    });
+    setVotacionesReales(actualizadas);
+  };
 
   const cargarConfiguraciones = async () => {
     const resDocs = await ComunidadService.getDocumentos(propiedad.codigo_edificio!);
@@ -253,7 +269,6 @@ export function ComunidadView({ propiedad }: ComunidadViewProps) {
       ));
       showToast('Estado del ticket actualizado con éxito.', 'success');
       
-      // Enviar correo de notificación al residente (solo si cambió de estado o si es actualización relevante)
       const propInfo = selectedTicket.propietarios as any;
       if (propInfo?.correo) {
         try {
@@ -286,7 +301,7 @@ export function ComunidadView({ propiedad }: ComunidadViewProps) {
       }
 
       setTicketEvidenciaArchivo(null);
-      setSelectedTicket(null); // Cerrar modal
+      setSelectedTicket(null); 
     } else {
       showToast('Error al actualizar ticket: ' + result.mensaje, 'error');
     }
@@ -387,7 +402,7 @@ export function ComunidadView({ propiedad }: ComunidadViewProps) {
         ] as const).map(({ key, label, Icon }) => (
           <button
             key={key}
-            onClick={() => setSubTab(key)}
+            onClick={() => setSubTab(key as any)}
             className={`flex-1 min-w-[110px] py-3 px-2 rounded-xl font-semibold transition-all ${
               subTab === key ? 'bg-white text-blue-600' : 'text-white hover:bg-white/10'
             }`}
@@ -436,25 +451,81 @@ export function ComunidadView({ propiedad }: ComunidadViewProps) {
       {/* ── VOTACIONES ─────────────────────────────────────────────────────── */}
       {subTab === 'votaciones' && (
         <section className="animate-in fade-in">
-          <h2 className="text-xl font-semibold mb-4">Resultados de Votaciones</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Resultados de Votaciones</h2>
+            {onNavigateToVotaciones && (
+              <button 
+                onClick={onNavigateToVotaciones}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-500/20 transition-colors"
+              >
+                Gestionar / Nueva
+              </button>
+            )}
+          </div>
+          
           <div className="space-y-4">
-            {votaciones.map(v => (
-              <div key={v.id} className="bg-white/10 border border-white/20 rounded-2xl p-5">
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="font-bold text-lg">{v.pregunta}</h3>
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${v.activa ? 'bg-green-500' : 'bg-gray-500'} text-white`}>{v.activa ? 'Activa' : 'Cerrada'}</span>
-                </div>
-                <div className="space-y-3 mb-4">
-                  {[{ label: 'Sí', val: v.si, color: 'bg-green-400', textColor: 'text-green-400' }, { label: 'No', val: v.no, color: 'bg-red-400', textColor: 'text-red-400' }].map(row => (
-                    <div key={row.label}>
-                      <div className="flex justify-between text-sm mb-1"><span className={row.textColor}>{row.label}</span><span>{row.val} votos</span></div>
-                      <div className="w-full bg-white/20 rounded-full h-3"><div className={`${row.color} h-full rounded-full`} style={{ width: `${(row.val / v.total) * 100}%` }}></div></div>
-                    </div>
-                  ))}
-                </div>
-                {v.activa && <button className="w-full bg-blue-500 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2"><CheckCircle className="w-5 h-5"/>Cerrar Votación</button>}
+            {votacionesReales.length === 0 ? (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center text-white/50">
+                No hay encuestas registradas en este edificio.
               </div>
-            ))}
+            ) : votacionesReales.map(enc => {
+              const totalVotos = enc.votos?.length || 0;
+              
+              return (
+                <div key={enc.id} className="bg-white/10 border border-white/20 rounded-2xl p-5">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="font-bold text-lg text-white">{enc.pregunta}</h3>
+                      <span className="text-white/50 text-sm">Cierre: {new Date(enc.fecha_cierre).toLocaleString()}</span>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${enc.activa ? 'bg-green-500' : 'bg-gray-500'} text-white`}>
+                      {enc.activa ? 'Activa' : 'Cerrada'}
+                    </span>
+                  </div>
+                  <div className="space-y-3 mb-4">
+                    {enc.opciones.map((op: string, idx: number) => {
+                      // Colores estéticos por opción (similar al original que tenía verde/rojo)
+                      const isYes = op.toLowerCase() === 'sí' || op.toLowerCase() === 'si' || idx === 0;
+                      const isNo = op.toLowerCase() === 'no' || idx === 1;
+                      const color = isYes ? 'bg-green-400' : (isNo ? 'bg-red-400' : 'bg-yellow-400');
+                      const textColor = isYes ? 'text-green-400' : (isNo ? 'text-red-400' : 'text-yellow-400');
+
+                      const votosOpcion = enc.votos?.filter((v: any) => v.opcion_seleccionada === op).length || 0;
+                      const porcentaje = totalVotos === 0 ? 0 : Math.round((votosOpcion / totalVotos) * 100);
+                      
+                      return (
+                        <div key={op}>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className={`font-medium ${textColor}`}>{op}</span>
+                            <span className="text-white/80">{votosOpcion} votos <span className="opacity-50">({porcentaje}%)</span></span>
+                          </div>
+                          <div className="w-full bg-white/20 rounded-full h-3">
+                            <div className={`${color} h-full rounded-full transition-all duration-1000`} style={{ width: `${porcentaje}%` }}></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {enc.activa && (
+                    <button 
+                      onClick={() => {
+                        askConfirm(
+                          'Cerrar Votación',
+                          '¿Seguro que deseas cerrar la votación anticipadamente?',
+                          async () => {
+                            await EncuestaService.cerrarEncuesta(enc.id);
+                            cargarVotacionesReales();
+                          }
+                        );
+                      }}
+                      className="w-full bg-blue-500 hover:bg-blue-600 transition-colors text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 mt-4"
+                    >
+                      <CheckCircle className="w-5 h-5"/> Cerrar Votación
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       )}

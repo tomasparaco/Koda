@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabase';
 
 export const EncuestaService = {
-  // 1. Crear encuesta con archivo y enviar notificación
   crearEncuesta: async (
     codigo_edificio: string,
     pregunta: string,
@@ -12,7 +11,6 @@ export const EncuestaService = {
     try {
       let documento_url = null;
 
-      // Subir archivo si existe
       if (archivo) {
         const fileExt = archivo.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
@@ -31,7 +29,6 @@ export const EncuestaService = {
         documento_url = publicUrlData.publicUrl;
       }
 
-      // Insertar encuesta en BDD
       const { data: encuesta, error } = await supabase
         .from('encuestas')
         .insert([{ codigo_edificio, pregunta, opciones, fecha_cierre, documento_url, activa: true }])
@@ -40,34 +37,38 @@ export const EncuestaService = {
 
       if (error) throw error;
 
-      // --- INTEGRACIÓN DE NOTIFICACIÓN POR CORREO ---
-      // Obtenemos todos los correos del edificio
+      // --- LÓGICA DE CORREOS ACTUALIZADA ---
       const { data: propietarios } = await supabase
         .from('propietarios')
         .select('correo')
         .eq('codigo_edificio', codigo_edificio);
 
       if (propietarios && propietarios.length > 0) {
-        const correos = propietarios.map(p => p.correo);
-        console.log(`Simulando envío de correo a: ${correos.join(', ')} para la nueva encuesta: ${pregunta}`);
+        const correos = propietarios.map(p => p.correo).filter(Boolean); // Filtramos nulls
         
-        // NOTA: Aquí debes enlazar tu API de correos real (ej. Resend, SendGrid o Supabase Edge Functions).
-        /* Ejemplo de llamada real:
-        await fetch('TU_URL_DE_EDGE_FUNCTION_PARA_CORREOS', {
-          method: 'POST',
-          body: JSON.stringify({ destinatarios: correos, asunto: "Nueva Votación Abierta", mensaje: pregunta })
-        });
-        */
+        try {
+          // Llamada real a tu Supabase Edge Function
+          await supabase.functions.invoke('enviar-correos-votacion', {
+            body: { 
+              destinatarios: correos, 
+              asunto: "Nueva Asamblea/Votación Abierta en Koda", 
+              pregunta: pregunta,
+              fecha_cierre: fecha_cierre
+            }
+          });
+          console.log("Notificación de correos enviada al servidor.");
+        } catch (funcErr) {
+          console.error("Error contactando al servicio de correos:", funcErr);
+          // No bloqueamos la creación de la encuesta si el correo falla
+        }
       }
 
       return { exito: true, data: encuesta };
     } catch (error: any) {
-      console.error("Error creando encuesta:", error);
       return { exito: false, mensaje: error.message };
     }
   },
 
-  // 2. Obtener encuestas y sus votos
   getEncuestas: async (codigo_edificio: string) => {
     const { data: encuestas, error: errEncuestas } = await supabase
       .from('encuestas')
@@ -77,7 +78,6 @@ export const EncuestaService = {
 
     if (errEncuestas) return [];
 
-    // Obtenemos los votos para calcular gráficas (anonimizados en la vista)
     const { data: votos } = await supabase
       .from('votos')
       .select('encuesta_id, opcion_seleccionada, apartamento');
@@ -88,7 +88,6 @@ export const EncuestaService = {
     });
   },
 
-  // 3. Registrar un voto
   votar: async (encuesta_id: string, apartamento: string, opcion_seleccionada: string) => {
     try {
       const { error } = await supabase
@@ -105,7 +104,6 @@ export const EncuestaService = {
     }
   },
 
-  // 4. Cerrar encuesta anticipadamente
   cerrarEncuesta: async (encuesta_id: string) => {
     const { error } = await supabase
       .from('encuestas')
