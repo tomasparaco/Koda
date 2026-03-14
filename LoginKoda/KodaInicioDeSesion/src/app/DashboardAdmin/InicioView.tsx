@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, Wrench, DollarSign, TrendingUp, Bell, Users, Vote, FileEdit, UserPlus, Upload, FileText, Mail, ArrowLeft, Filter } from 'lucide-react';
+import { AlertCircle, Wrench, DollarSign, TrendingUp, Bell, Users, Vote, FileEdit, UserPlus, Upload, FileText } from 'lucide-react';
 import type { Propietario } from '../../types';
 import { GastoService } from '../../services/gasto.service';
 import { PagoService } from '../../services/pago.service';
 import { ReciboService } from '../../services/recibo.service';
-import { TicketService } from '../../services/ticket.service';
 import { bcvService } from '../../services/bcv.service';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../components/ui/button';
@@ -18,23 +17,14 @@ interface InicioViewProps {
   propiedad: Propietario;
   onNavigateToConciliacion?: () => void;
   onNavigateToTickets?: () => void;
+  onNavigateToVotaciones?: () => void; // <--- NUEVA PROPIEDAD
 }
 
-export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTickets }: InicioViewProps) {
+export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTickets, onNavigateToVotaciones }: InicioViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const [openTicketsCount, setOpenTicketsCount] = useState(0);
   const [topMorosos, setTopMorosos] = useState<any[]>([]);
-  const [todosMorosos, setTodosMorosos] = useState<any[]>([]);
-  const [viewState, setViewState] = useState<'dashboard' | 'morosos'>('dashboard');
-  
-  // FILTROS DE MOROSIDAD
-  const [filterMinDebt, setFilterMinDebt] = useState<number>(0);
-  const [filterMinMonths, setFilterMinMonths] = useState<number>(0);
-  
-  // ENVÍO DE CORREOS
-  const [sendingEmails, setSendingEmails] = useState<Record<number, boolean>>({});
 
   const [recaudacion, setRecaudacion] = useState({
     mes: 'Cargando...',
@@ -61,19 +51,9 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
         setPendingCount(count);
       }
 
-      const ticketsResponse = await TicketService.getTicketsByEdificio(propiedad.codigo_edificio);
-      if (ticketsResponse.exito && ticketsResponse.data) {
-        setOpenTicketsCount(ticketsResponse.data.filter(t => t.estado === 'abierto').length);
-      }
-
       const { exito: exitoMorosos, data: morososData } = await PagoService.getTopMorosos(propiedad.codigo_edificio);
       if (exitoMorosos && morososData) {
         setTopMorosos(morososData);
-      }
-
-      const { exito: exitoTodosMorosos, data: todosMorososData } = await PagoService.getTodosLosMorosos(propiedad.codigo_edificio);
-      if (exitoTodosMorosos && todosMorososData) {
-        setTodosMorosos(todosMorososData);
       }
 
       // Recaudación real del mes
@@ -102,25 +82,23 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
         montoRecaudado = pagosMes.reduce((acc, p) => acc + Number(p.monto), 0);
       }
 
-      // Calculate clamped percentage
       let pct = 0;
       if (metaRecaudacion > 0) {
         pct = Math.round((montoRecaudado / metaRecaudacion) * 100);
       } else if (montoRecaudado > 0) {
-        pct = 100; // If they collected money but no expenses registered
+        pct = 100;
       }
 
       setRecaudacion({
         mes: monthName,
         meta: metaRecaudacion,
         actual: montoRecaudado,
-        porcentaje: Math.min(pct, 100) // Ensure max visual bar is 100%
+        porcentaje: Math.min(pct, 100) 
       });
     };
     fetchDashboardData();
   }, [propiedad.codigo_edificio]);
 
-  // Estado para la emisión de recibos
   const [showEmisionModal, setShowEmisionModal] = useState(false);
   const [isEmitting, setIsEmitting] = useState(false);
   const [gastosMes, setGastosMes] = useState(0);
@@ -147,7 +125,6 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
     }
   };
 
-  // Form state
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [monto, setMonto] = useState('');
@@ -203,7 +180,6 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
 
       if (uploadError) {
         console.error('Error uploading file:', uploadError);
-        // Temporarily display the detailed error for debugging
         alert(`Error detallado al subir: ${uploadError.message}`);
         setIsLoading(false);
         return;
@@ -221,77 +197,27 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
       categoria,
       factura_url,
       codigo_edificio: propiedad.codigo_edificio,
-      pagado_al_proveedor: false, // Default value
+      pagado_al_proveedor: false, 
     });
 
     if (result.exito) {
       alert(result.mensaje);
       setShowAddExpenseModal(false);
       resetForm();
-      // Optionally, you could pass a function from the layout to refresh other views
     } else {
       alert(result.mensaje);
     }
     setIsLoading(false);
   };
 
-  const handleSendReminder = async (moroso: any, idx: number) => {
-    if (!moroso.correo) {
-      alert("Este usuario no tiene un correo electrónico registrado.");
-      return;
-    }
-    
-    setSendingEmails(prev => ({ ...prev, [idx]: true }));
-    try {
-      // Envía el correo directamente al correo del propietario seleccionado
-      const response = await fetch(`https://formsubmit.co/ajax/${moroso.correo}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          _subject: `Aviso de Deuda Pendiente - Apto ${moroso.apartamento}`,
-          _template: "table",
-          Para: moroso.correo || "Sin correo",
-          Propietario: moroso.nombre,
-          Apartamento: moroso.apartamento,
-          DeudaTotal: `$${Number(moroso.deuda).toFixed(2)}`,
-          Mensaje: `Hola ${moroso.nombre}, le escribimos desde la administración para recordarle su saldo pendiente de $${Number(moroso.deuda).toFixed(2)}. Agradecemos que pueda ponerse al día lo antes posible.`
-        })
-      });
-      if (response.ok) {
-        alert("Correo enviado exitosamente.");
-      } else {
-        alert("Hubo un error al enviar el correo.");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Error de conexión al enviar correo.");
-    } finally {
-      setSendingEmails(prev => ({ ...prev, [idx]: false }));
-    }
-  };
-
-  const filteredMorosos = todosMorosos.filter(moroso => {
-     const deuda = Number(moroso.deuda);
-     const mesesEstimados = moroso.meses_adeudados || 0;
-     
-     if (filterMinDebt > 0 && deuda < filterMinDebt) return false;
-     if (filterMinMonths > 0 && mesesEstimados < filterMinMonths) return false;
-     
-     return true;
-  });
-
   return (
     <>
-      {viewState === 'dashboard' && (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          {/* 1. Sección de Alertas "Por Hacer" */}
       <section className="mb-6">
         <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
           <AlertCircle className="w-5 h-5" />
           Alertas Urgentes
         </h2>
         <div className="space-y-3">
-          {/* Pagos por Conciliar */}
           <button
             onClick={onNavigateToConciliacion}
             className="w-full bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all text-left"
@@ -312,10 +238,9 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
             </div>
           </button>
 
-          {/* Tickets Abiertos */}
           <button 
             onClick={onNavigateToTickets}
-            className="w-full bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all"
+            className="w-full bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all text-left"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -328,21 +253,19 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
                 </div>
               </div>
               <div className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">
-                {openTicketsCount}
+                Ver Todos
               </div>
             </div>
           </button>
         </div>
       </section>
 
-      {/* 2. Sección de Pulso Financiero */}
       <section className="mb-6">
         <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
           <TrendingUp className="w-5 h-5" />
           Pulso Financiero
         </h2>
         <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-5">
-          {/* Progreso de Recaudación */}
           <div className="mb-4">
             <div className="flex justify-between items-center mb-2">
               <span className="font-semibold capitalize">Recaudación de {recaudacion.mes}</span>
@@ -360,7 +283,6 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
             </p>
           </div>
 
-          {/* Tasa de Cambio BCV */}
           <div className="border-t border-white/20 pt-4">
             <div className="flex justify-between items-center">
               <div>
@@ -373,14 +295,12 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
         </div>
       </section>
 
-      {/* 3. Sección de Acciones Rápidas */}
       <section className="mb-6">
         <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
           <Bell className="w-5 h-5" />
           Acciones Rápidas
         </h2>
         <div className="grid grid-cols-2 gap-3">
-          {/* Generar Cobro Mensual */}
           <button onClick={abrirModalEmision} className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all">
             <div className="bg-blue-500 p-3 rounded-full w-fit mx-auto mb-3">
               <DollarSign className="w-6 h-6 text-white" />
@@ -388,7 +308,6 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
             <h3 className="font-semibold text-sm text-center">Generar Cobro Mensual</h3>
           </button>
 
-          {/* Nuevo Comunicado */}
           <button className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all">
             <div className="bg-purple-500 p-3 rounded-full w-fit mx-auto mb-3">
               <Bell className="w-6 h-6" />
@@ -396,15 +315,17 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
             <h3 className="font-semibold text-sm text-center">Nuevo Comunicado</h3>
           </button>
 
-          {/* Crear Encuesta/Asamblea */}
-          <button className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all">
+          {/* CONECTADO A LA VISTA DE VOTACIONES */}
+          <button 
+            onClick={onNavigateToVotaciones} 
+            className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all"
+          >
             <div className="bg-green-500 p-3 rounded-full w-fit mx-auto mb-3">
               <Vote className="w-6 h-6" />
             </div>
             <h3 className="font-semibold text-sm text-center">Crear Encuesta / Asamblea</h3>
           </button>
 
-          {/* Registrar Gasto/Multa */}
           <Dialog open={showAddExpenseModal} onOpenChange={setShowAddExpenseModal}>
             <DialogTrigger asChild>
               <button className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all">
@@ -477,7 +398,6 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
                           <img src={facturaPreview!} alt="Vista previa de la factura" className="w-full h-full object-contain" />
                         )}
 
-                        {/* Overlay on hover to change/remove file */}
                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3">
                           <button
                             type="button"
@@ -506,14 +426,12 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
         </div>
       </section>
 
-      {/* 4. Sección de Gestión de Usuarios */}
       <section className="mb-6">
         <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
           <Users className="w-5 h-5" />
           Gestión de Usuarios
         </h2>
 
-        {/* Invitar Vecino */}
         <button className="w-full bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all mb-4">
           <div className="flex items-center gap-3">
             <div className="bg-blue-500 p-3 rounded-full">
@@ -526,43 +444,26 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
           </div>
         </button>
 
-        {/* Morosos Top */}
         <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-5">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-semibold flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-red-400" />
-              Morosos Top
-            </h3>
-          </div>
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-red-400" />
+            Morosos Top
+          </h3>
           <div className="space-y-2">
             {topMorosos.length > 0 ? (
               topMorosos.map((moroso, index) => (
                 <div key={index} className={`flex justify-between items-center py-2 ${index < topMorosos.length - 1 ? 'border-b border-white/10' : ''}`}>
                   <span className="text-sm truncate mr-2">Apto {moroso.apartamento} - {moroso.nombre.split(' ')[0]}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-orange-300 text-xs bg-orange-500/20 px-2 py-0.5 rounded border border-orange-500/20">
-                      {moroso.meses_adeudados || 0} Mes{(moroso.meses_adeudados || 0) !== 1 ? 'es' : ''}
-                    </span>
-                    <span className="text-red-400 font-bold">${Number(moroso.deuda).toFixed(2)}</span>
-                  </div>
+                  <span className="text-red-400 font-bold">${Number(moroso.deuda).toFixed(2)}</span>
                 </div>
               ))
             ) : (
               <div className="text-sm text-green-400 text-center py-2">No hay morosos registrados ¡Excelente!</div>
             )}
           </div>
-          {topMorosos.length > 0 && (
-             <button
-               onClick={() => setViewState('morosos')}
-               className="w-full mt-4 bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/30 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-             >
-               <FileText className="w-4 h-4" /> Ver Reporte Completo
-             </button>
-          )}
         </div>
       </section>
 
-      {/* Modal de Emisión de Recibos */}
       {showEmisionModal && (
         <>
           <div
@@ -638,121 +539,6 @@ export function InicioView({ propiedad, onNavigateToConciliacion, onNavigateToTi
             </div>
           </div>
         </>
-      )}
-
-        </div>
-      )}
-
-      {/* Modal Todos los Morosos */}
-      {viewState === 'morosos' && (
-        <div className="absolute inset-0 bg-gray-900 z-50 overflow-y-auto custom-scrollbar">
-          <div className="sticky top-0 z-40 bg-gradient-to-r from-red-600 to-red-800 px-6 py-5 flex items-center gap-4 shadow-lg">
-            <button 
-              onClick={() => setViewState('dashboard')}
-              className="p-2 bg-black/20 hover:bg-black/40 rounded-full transition-colors backdrop-blur-sm"
-            >
-              <ArrowLeft className="w-6 h-6 text-white" />
-            </button>
-            <div>
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <AlertCircle className="w-6 h-6" /> Reporte de Cuentas por Cobrar
-              </h3>
-              <p className="text-red-100 text-sm mt-1">
-                Gestión y seguimiento de todos los dueños con saldos deudores
-              </p>
-            </div>
-          </div>
-          
-          <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4">
-            
-            {/* Filtros */}
-            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-5 shadow-lg flex flex-col md:flex-row gap-4 items-end">
-              <div className="flex-1 w-full">
-                <Label className="text-blue-200 mb-2 block flex items-center gap-2"><Filter className="w-4 h-4"/> Deuda Mínima ($)</Label>
-                <Input 
-                  type="number" 
-                  min="0"
-                  value={filterMinDebt || ''} 
-                  onChange={(e) => setFilterMinDebt(Number(e.target.value))} 
-                  placeholder="Ej: 50"
-                  className="bg-black/30 border-white/20 text-white rounded-xl placeholder:text-white/30"
-                />
-              </div>
-              <div className="flex-1 w-full">
-                <Label className="text-blue-200 mb-2 block flex items-center gap-2"><Filter className="w-4 h-4"/> Meses Acumulados</Label>
-                <Input 
-                  type="number" 
-                  min="0"
-                  value={filterMinMonths || ''} 
-                  onChange={(e) => setFilterMinMonths(Number(e.target.value))} 
-                  placeholder="Ej: 2"
-                  className="bg-black/30 border-white/20 text-white rounded-xl placeholder:text-white/30"
-                />
-              </div>
-              <button 
-                onClick={() => { setFilterMinDebt(0); setFilterMinMonths(0); }}
-                className="bg-white/10 hover:bg-white/20 text-white border border-white/10 px-6 py-2.5 rounded-xl font-medium transition-colors w-full md:w-auto h-[42px]"
-              >
-                Limpiar
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredMorosos.length > 0 ? (
-                filteredMorosos.map((moroso, idx) => {
-                  const deudaObj = Number(moroso.deuda);
-                  const mesesDeuda = moroso.meses_adeudados || 0;
-                  const isLoadingM = sendingEmails[idx];
-
-                  return (
-                    <div key={idx} className="bg-white/5 border border-white/10 p-5 rounded-2xl flex flex-col justify-between gap-4 hover:bg-white/10 transition-colors shadow-lg">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="bg-blue-500/20 text-blue-300 font-bold px-3 py-1.5 rounded-lg text-xs border border-blue-500/20 shadow-inner">
-                              Unidad {moroso.apartamento}
-                            </span>
-                            <span className="bg-orange-500/20 text-orange-300 font-bold px-3 py-1.5 rounded-lg text-xs border border-orange-500/20">
-                              ~{mesesDeuda} Mes{mesesDeuda !== 1 ? 'es' : ''}
-                            </span>
-                          </div>
-                          <h4 className="font-bold text-white text-xl">{moroso.nombre}</h4>
-                          <p className="text-white/60 text-sm mt-1 flex items-center gap-2">
-                            <Mail className="w-4 h-4" /> {moroso.correo || 'Sin correo registrado'}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-white/50 text-[10px] uppercase font-bold tracking-wider block mb-1">Total Monto</span>
-                          <span className="text-red-400 font-bold text-2xl">${deudaObj.toFixed(2)}</span>
-                        </div>
-                      </div>
-                      
-                      <button 
-                        onClick={() => handleSendReminder(moroso, idx)}
-                        disabled={isLoadingM}
-                        className="mt-2 w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white px-4 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-lg"
-                      >
-                        {isLoadingM ? 'Enviando Aviso...' : <><Mail className="w-4 h-4" /> Enviar Aviso de Cobro</>}
-                      </button>
-                    </div>
-                  );
-                })
-              ) : (
-                  <div className="col-span-1 md:col-span-2 text-center py-16 bg-white/5 border border-white/10 rounded-3xl">
-                    <div className="bg-green-500/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/30">
-                      <TrendingUp className="w-10 h-10 text-green-400" />
-                    </div>
-                    <h3 className="text-2xl font-bold text-white mb-2">Módulo al día</h3>
-                    <p className="text-white/60 max-w-md mx-auto">
-                      {todosMorosos.length === 0 
-                        ? 'Todos los propietarios se encuentran solventes en el condominio en este momento.'
-                        : 'No hay deudores que coincidan con los filtros aplicados.'}
-                    </p>
-                  </div>
-              )}
-            </div>
-          </div>
-        </div>
       )}
     </>
   );
