@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Vote, Plus, X, FileText, CheckCircle, BarChart3, AlertCircle, Upload } from 'lucide-react';
+import { Vote, Plus, X, FileText, CheckCircle, BarChart3, AlertCircle, Upload, ChevronLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { EncuestaService } from '../../services/encuesta.service';
 import { Button } from '../components/ui/button';
@@ -92,21 +92,99 @@ export default function AdminVotaciones() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Vote className="w-6 h-6" /> Asambleas y Votaciones
-          </h2>
-          <p className="text-white/60">Gestiona encuestas y toma de decisiones.</p>
-        </div>
-        <Button onClick={() => setIsCreating(!isCreating)} className="bg-blue-600 hover:bg-blue-700 text-white">
-          {isCreating ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-          {isCreating ? 'Cancelar' : 'Nueva Encuesta'}
-        </Button>
-      </div>
+      
+      {!isCreating ? (
+        <>
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                <Vote className="w-6 h-6" /> Asambleas y Votaciones
+              </h2>
+              <p className="text-white/60">Gestiona encuestas y toma de decisiones.</p>
+            </div>
+            <Button onClick={() => setIsCreating(true)} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <Plus className="w-4 h-4 mr-2" /> Nueva Encuesta
+            </Button>
+          </div>
 
-      {isCreating && (
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 shadow-xl space-y-6">
+          {/* Lista de Encuestas Admin */}
+          <div className="grid grid-cols-1 gap-6">
+            {encuestas.length === 0 ? (
+               <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center text-white/50">
+                 No hay encuestas creadas en este edificio.
+               </div>
+            ) : (
+              encuestas.map((enc) => {
+                const totalVotos = enc.votos?.length || 0;
+                return (
+                  <div key={enc.id} className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-xl font-bold text-white">{enc.pregunta}</h3>
+                          <span className={`px-3 py-1 text-xs font-bold rounded-full ${enc.activa ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'}`}>
+                            {enc.activa ? 'En Curso' : 'Cerrada'}
+                          </span>
+                        </div>
+                        <p className="text-white/50 text-sm mt-1">Cierra: {new Date(enc.fecha_cierre).toLocaleString()}</p>
+                      </div>
+                      {enc.activa && (
+                        <Button variant="destructive" size="sm" onClick={async () => {
+                          if(confirm('¿Seguro que deseas cerrar la votación anticipadamente?')) {
+                              await EncuestaService.cerrarEncuesta(enc.id);
+                              if(codigoEdificio) cargarEncuestas(codigoEdificio);
+                          }
+                        }}>Terminar Ahora</Button>
+                      )}
+                    </div>
+
+                    {enc.documento_url && (
+                      <a href={enc.documento_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 bg-blue-500/10 px-3 py-1.5 rounded-lg text-sm transition-colors mb-4">
+                        <FileText className="w-4 h-4" /> Ver documento adjunto
+                      </a>
+                    )}
+
+                    <div className="space-y-3 mt-4">
+                      <p className="text-white/70 text-sm mb-2 flex items-center gap-2"><BarChart3 className="w-4 h-4"/> Resultados (Total: {totalVotos} votos)</p>
+                      {enc.opciones.map((op: string) => {
+                        const votosOpcion = enc.votos?.filter((v: any) => v.opcion_seleccionada === op).length || 0;
+                        const porcentaje = calcularPorcentaje(votosOpcion, totalVotos);
+                        
+                        return (
+                          <div key={op} className="space-y-1">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-white font-medium">{op}</span>
+                              <span className="text-white/70">{porcentaje}% ({votosOpcion} votos)</span>
+                            </div>
+                            <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden border border-white/5">
+                              <div className="bg-blue-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${porcentaje}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 shadow-xl space-y-6 animate-in slide-in-from-right-8 duration-300">
+          
+          {/* CABECERA DE CREACIÓN CON BOTÓN DE VOLVER */}
+          <div className="flex justify-between items-center border-b border-white/10 pb-4">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <Plus className="w-5 h-5 text-blue-400" /> Crear Nueva Asamblea
+            </h3>
+            <button 
+              onClick={() => setIsCreating(false)} 
+              className="flex items-center gap-1.5 text-white/70 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors text-sm font-medium border border-white/5"
+            >
+              <ChevronLeft className="w-4 h-4" /> Volver a la lista
+            </button>
+          </div>
+
           <div>
             <Label className="text-white/80">Pregunta o Tema a Votar</Label>
             <Input value={pregunta} onChange={e => setPregunta(e.target.value)} placeholder="Ej. ¿Aprobar el presupuesto de pintura?" className="bg-white/5 border-white/10 text-white mt-1" />
@@ -134,7 +212,6 @@ export default function AdminVotaciones() {
             </div>
           </div>
           
-          {/* NUEVO BOTÓN DE ARCHIVO (Req 1) */}
           <div className="pt-4 border-t border-white/10">
             <Label className="text-white/80 block mb-2">Documento Soporte (Opcional)</Label>
             {!archivo ? (
@@ -161,7 +238,6 @@ export default function AdminVotaciones() {
                   <img src={archivoPreview!} alt="Vista previa" className="w-full h-full object-contain" />
                 )}
                 
-                {/* Overlay para borrar */}
                 <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3">
                   <button onClick={() => { setArchivo(null); setArchivoPreview(null); }} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                     Eliminar archivo
@@ -171,67 +247,18 @@ export default function AdminVotaciones() {
             )}
           </div>
           
-          <Button onClick={handleCrear} disabled={loading} className="w-full bg-green-600 hover:bg-green-700 text-white mt-4 py-6 text-lg">
-            {loading ? 'Publicando...' : 'Publicar Encuesta'}
-          </Button>
+          <div className="flex gap-3 pt-4 border-t border-white/10">
+            <Button onClick={() => setIsCreating(false)} variant="ghost" className="flex-1 bg-white/5 hover:bg-white/10 text-white py-6 text-lg border border-white/10">
+              Cancelar
+            </Button>
+            <Button onClick={handleCrear} disabled={loading} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-6 text-lg">
+              {loading ? 'Publicando...' : 'Publicar Encuesta'}
+            </Button>
+          </div>
+
         </div>
       )}
 
-      {/* Lista de Encuestas Admin */}
-      <div className="grid grid-cols-1 gap-6">
-        {encuestas.map((enc) => {
-          const totalVotos = enc.votos?.length || 0;
-          return (
-            <div key={enc.id} className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-xl font-bold text-white">{enc.pregunta}</h3>
-                    <span className={`px-3 py-1 text-xs font-bold rounded-full ${enc.activa ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'}`}>
-                      {enc.activa ? 'En Curso' : 'Cerrada'}
-                    </span>
-                  </div>
-                  <p className="text-white/50 text-sm mt-1">Cierra: {new Date(enc.fecha_cierre).toLocaleString()}</p>
-                </div>
-                {enc.activa && (
-                  <Button variant="destructive" size="sm" onClick={async () => {
-                    if(confirm('¿Seguro que deseas cerrar la votación anticipadamente?')) {
-                        await EncuestaService.cerrarEncuesta(enc.id);
-                        if(codigoEdificio) cargarEncuestas(codigoEdificio);
-                    }
-                  }}>Terminar Ahora</Button>
-                )}
-              </div>
-
-              {enc.documento_url && (
-                <a href={enc.documento_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 bg-blue-500/10 px-3 py-1.5 rounded-lg text-sm transition-colors mb-4">
-                  <FileText className="w-4 h-4" /> Ver documento adjunto
-                </a>
-              )}
-
-              <div className="space-y-3 mt-4">
-                <p className="text-white/70 text-sm mb-2 flex items-center gap-2"><BarChart3 className="w-4 h-4"/> Resultados (Total: {totalVotos} votos)</p>
-                {enc.opciones.map((op: string) => {
-                  const votosOpcion = enc.votos?.filter((v: any) => v.opcion_seleccionada === op).length || 0;
-                  const porcentaje = calcularPorcentaje(votosOpcion, totalVotos);
-                  
-                  return (
-                    <div key={op} className="space-y-1">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-white font-medium">{op}</span>
-                        <span className="text-white/70">{porcentaje}% ({votosOpcion} votos)</span>
-                      </div>
-                      <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden border border-white/5">
-                        <div className="bg-blue-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${porcentaje}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { PagoService } from '../../services/pago.service';
 import { bcvService } from '../../services/bcv.service';
 import { ComunidadService, DocumentoCondominio, ContactoEmergencia } from '../../services/comunidad.service';
 import { CuentaBancariaService, CuentaBancaria } from '../../services/cuenta_bancaria.service';
-import { EncuestaService } from '../../services/encuesta.service'; // <-- IMPORTACIÓN NECESARIA
+import { EncuestaService } from '../../services/encuesta.service';
 import UserProfile from './UserProfile';
 import ReportPaymentModal from './ReportPaymentModal';
 import { LegalTermsModal } from './LegalTermsModal';
@@ -22,7 +22,7 @@ import { ReciboService } from '../../services/recibo.service';
 import kodaLogo from '../../assets/LogoKoda4.png';
 import { TicketService } from '../../services/ticket.service';
 import ReportTicketModal from './ReportTicketModal';
-import UserVotacionesModal from './UserVotacionesModal'; // <-- IMPORTACIÓN DEL MODAL
+import UserVotacionesModal from './UserVotacionesModal';
 
 interface UserDashboardProps {
   onLogout: () => void;
@@ -50,11 +50,8 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
   const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<any>(null); 
   
-  // NUEVO ESTADO: Controla el Modal de Votaciones Activas
   const [isVotacionesModalOpen, setIsVotacionesModalOpen] = useState(false);
-
-  // NUEVO ESTADO: Guarda las votaciones cerradas para dibujarlas con tu diseño
-  const [votacionesCerradas, setVotacionesCerradas] = useState<any[]>([]);
+  const [votacionesComunidad, setVotacionesComunidad] = useState<any[]>([]);
 
   const [ticketRating, setTicketRating] = useState<number>(0);
   const [ticketRatingComment, setTicketRatingComment] = useState('');
@@ -313,15 +310,14 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
         const resContacts = await ComunidadService.getContactos(userData.codigo_edificio);
         if (resContacts.exito) setEmergencyContacts(resContacts.data);
         
-        // Cargar Votaciones Cerradas reales
         const resVotos = await EncuestaService.getEncuestas(userData.codigo_edificio);
         if (resVotos) {
-          setVotacionesCerradas(resVotos.filter(enc => !enc.activa));
+          setVotacionesComunidad(resVotos);
         }
       };
       fetchComunidad();
     }
-  }, [userData?.codigo_edificio, isVotacionesModalOpen]); // Se actualiza si cierra el modal de votar
+  }, [userData?.codigo_edificio, isVotacionesModalOpen]);
 
   useEffect(() => {
     if (userData?.id_propietario) {
@@ -953,43 +949,80 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
       {activeTab === 'comunidad' && (
         <div className="max-w-4xl mx-auto px-4 py-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
           
-          {/* VOTACIONES CERRADAS CON DATOS REALES DE LA BDD (¡Diseño Original Mantenido!) */}
+          {/* VOTACIONES Y ASAMBLEAS (MUESTRA TODAS CON EL DESGLOSE COMPLETO SÍ/NO/ABSTENCIÓN) */}
           <div className="space-y-4">
             <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
-              <Vote className="w-5 h-5 text-purple-400" /> Votaciones Cerradas
+              <Vote className="w-5 h-5 text-purple-400" /> Votaciones y Asambleas
             </h2>
+
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
-              <div className="space-y-4">
-                {votacionesCerradas.length === 0 ? (
-                  <p className="text-white/50 text-sm text-center py-4">No hay votaciones cerradas en este momento.</p>
+              <div className="space-y-6">
+                {votacionesComunidad.length === 0 ? (
+                  <p className="text-white/50 text-sm text-center py-4">No hay votaciones registradas en este momento.</p>
                 ) : (
-                  votacionesCerradas.map(vote => {
-                    // Adaptamos los datos reales al diseño de la foto
+                  votacionesComunidad.map(vote => {
                     const totalVotos = vote.votos?.length || 0;
                     
-                    // Contamos los votos 'Sí' (o la primera opción si no hay 'Sí') para definir si se aprobó
-                    const votosSi = vote.votos?.filter((v: any) => v.opcion_seleccionada.toLowerCase() === 'sí' || v.opcion_seleccionada.toLowerCase() === 'si').length || 0;
-                    const percentage = totalVotos === 0 ? 0 : Math.round((votosSi / totalVotos) * 100);
-                    const result = percentage >= 50 ? 'Aprobado' : 'Rechazado';
+                    // Cálculo para saber si se aprobó o no de forma general
+                    const votosSi = vote.votos?.filter((v: any) => v.opcion_seleccionada.toLowerCase() === 'sí' || v.opcion_seleccionada.toLowerCase() === 'si' || v.opcion_seleccionada === vote.opciones[0]).length || 0;
+                    const percentageSi = totalVotos === 0 ? 0 : Math.round((votosSi / totalVotos) * 100);
+                    const result = vote.activa ? 'En Curso' : (percentageSi >= 50 ? 'Aprobado' : 'Rechazado');
+                    const yaVoto = vote.votos?.some((v: any) => v.apartamento === userData.apartamento);
 
                     return (
-                      <div key={vote.id} className="p-4 border border-white/10 rounded-xl bg-black/20">
-                        <div className="flex justify-between items-start mb-3">
-                          <p className="font-semibold text-white pr-4">{vote.pregunta}</p>
+                      <div key={vote.id} className={`p-4 border ${vote.activa ? 'border-purple-500/40 bg-purple-900/10' : 'border-white/10 bg-black/20'} rounded-xl relative overflow-hidden shadow-lg`}>
+                        {vote.activa && <div className="absolute top-0 left-0 w-1 h-full bg-purple-500" />}
+                        
+                        <div className="flex justify-between items-start mb-4">
+                          <p className={`font-semibold pr-4 pl-2 ${vote.activa ? 'text-white' : 'text-white/80'}`}>{vote.pregunta}</p>
                           <span className={`px-3 py-1 rounded-lg text-xs font-bold border shrink-0 ${
-                            result === 'Aprobado' 
-                              ? 'bg-green-500/20 text-green-300 border-green-500/30' 
-                              : 'bg-red-500/20 text-red-300 border-red-500/30'
+                            vote.activa 
+                              ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' 
+                              : (result === 'Aprobado' 
+                                ? 'bg-green-500/20 text-green-300 border-green-500/30' 
+                                : 'bg-red-500/20 text-red-300 border-red-500/30')
                           }`}>
                             {result}
                           </span>
                         </div>
-                        <div className="w-full bg-white/10 rounded-full h-2.5 mb-2 overflow-hidden border border-white/5">
-                          <div className="bg-purple-500 h-2.5 rounded-full" style={{ width: `${percentage}%` }}></div>
-                        </div>
-                        <div className="flex justify-between text-xs text-white/60 font-medium px-1">
-                          <span>{votosSi} a favor</span>
-                          <span>{percentage}%</span>
+
+                        <div className="pl-2">
+                          {/* MULTIPLES BARRAS DE PROGRESO */}
+                          <div className="space-y-3 mb-4">
+                            {vote.opciones.map((op: string, idx: number) => {
+                              const isYes = op.toLowerCase() === 'sí' || op.toLowerCase() === 'si' || idx === 0;
+                              const isNo = op.toLowerCase() === 'no' || idx === 1;
+                              const color = isYes ? 'bg-green-400' : (isNo ? 'bg-red-400' : 'bg-yellow-400');
+                              const textColor = isYes ? 'text-green-400' : (isNo ? 'text-red-400' : 'text-yellow-400');
+
+                              const votosOpcion = vote.votos?.filter((v: any) => v.opcion_seleccionada === op).length || 0;
+                              const porcentaje = totalVotos === 0 ? 0 : Math.round((votosOpcion / totalVotos) * 100);
+                              
+                              return (
+                                <div key={op}>
+                                  <div className="flex justify-between text-xs font-medium mb-1">
+                                    <span className={textColor}>{op}</span>
+                                    <span className="text-white/80">{votosOpcion} votos <span className="opacity-50">({porcentaje}%)</span></span>
+                                  </div>
+                                  <div className="w-full bg-white/10 rounded-full h-2.5 overflow-hidden">
+                                    <div className={`${color} h-full rounded-full transition-all duration-500`} style={{ width: `${porcentaje}%` }}></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* BOTONES */}
+                          {vote.activa && !yaVoto && (
+                              <button onClick={() => setIsVotacionesModalOpen(true)} className="mt-5 w-full bg-purple-600 hover:bg-purple-700 text-white py-2.5 rounded-lg text-sm font-bold transition-colors shadow-lg flex items-center justify-center gap-2">
+                                VOTAR AHORA
+                              </button>
+                          )}
+                          {vote.activa && yaVoto && (
+                              <div className="mt-5 text-center text-xs text-green-400 bg-green-500/10 py-2.5 rounded-lg border border-green-500/20 flex items-center justify-center gap-1.5 font-medium">
+                                <CheckCircle className="w-4 h-4"/> Tu voto anónimo fue registrado
+                              </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1170,6 +1203,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             )}
           </Dialog>
 
+          {/* Comunicados */}
           <div className="space-y-4">
             <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
               <Megaphone className="w-5 h-5 text-blue-400" /> Comunicados
