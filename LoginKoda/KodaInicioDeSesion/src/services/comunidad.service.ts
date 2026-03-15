@@ -17,7 +17,29 @@ export interface ContactoEmergencia {
   telefono: string;
   created_at?: string;
 }
+export interface Comunicado {
+  id?: string;
+  codigo_edificio: string;
+  titulo: string;
+  cuerpo: string;
+  categoria: 'Mantenimiento' | 'Informativo' | 'Urgente';
+  imagen_url?: string | null;
+  autor_id: string;
+  creado_en?: string;
+}
 
+export interface EventoCondominio {
+  id?: string;
+  codigo_edificio: string;
+  titulo: string;
+  descripcion: string;
+  fecha: string;
+  hora_inicio: string;
+  hora_fin: string;
+  tipo: 'Asamblea' | 'Mantenimiento' | 'Social';
+  notificar_ahora: boolean;
+}
+  
 export const ComunidadService = {
   // CONTACTOS DE EMERGENCIA
   getContactos: async (codigo_edificio: string) => {
@@ -155,5 +177,96 @@ export const ComunidadService = {
       console.error('Error deleting documento:', error);
       return { exito: false, mensaje: error.message };
     }
-  }
+  },
+
+  // COMUNICADOS OFICIALES
+  getComunicados: async (codigo_edificio: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('comunicados')
+        .select('*')
+        .eq('codigo_edificio', codigo_edificio)
+        .order('creado_en', { ascending: false });
+
+      if (error) throw error;
+      return { exito: true, data };
+    } catch (error: any) {
+      console.error('Error fetching comunicados:', error);
+      return { exito: false, data: [] };
+    }
+  },
+
+  crearComunicado: async (
+    comunicadoInfo: Omit<Comunicado, 'id' | 'imagen_url' | 'autor_id' | 'creado_en'>, 
+    file: File | null
+  ) => {
+    try {
+      // 1. Obtener el ID del administrador actual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuario no autenticado');
+
+      let imagen_url = null;
+
+      // 2. Subir archivo al bucket 'comunicados' si existe
+      if (file) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${comunicadoInfo.codigo_edificio}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('comunicados')
+          .upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        // Obtener URL pública
+        const { data: publicUrlData } = supabase.storage
+          .from('comunicados')
+          .getPublicUrl(fileName);
+
+        imagen_url = publicUrlData.publicUrl;
+      }
+
+      // 3. Insertar en la base de datos
+      const comunicadoCompleto: Comunicado = {
+        ...comunicadoInfo,
+        imagen_url,
+        autor_id: user.id
+      };
+
+      const { data, error } = await supabase
+        .from('comunicados')
+        .insert([comunicadoCompleto])
+        .select();
+
+      if (error) throw error;
+      return { exito: true, data: data[0] };
+    } catch (error: any) {
+      console.error('Error al crear comunicado:', error);
+      return { exito: false, mensaje: error.message };
+    }
+  },
+
+  getEventos: async (codigo_edificio: string) => {
+    const { data, error } = await supabase
+      .from('eventos')
+      .select('*')
+      .eq('codigo_edificio', codigo_edificio)
+      .order('fecha', { ascending: true });
+    if (error) return { exito: false, data: [] };
+    return { exito: true, data };
+  },
+
+  crearEvento: async (evento: EventoCondominio) => {
+    try {
+      const { data, error } = await supabase
+        .from('eventos')
+        .insert([evento])
+        .select();
+      if (error) throw error;
+      return { exito: true, data: data[0] };
+    } catch (error: any) {
+      return { exito: false, mensaje: error.message };
+    }
+  },
+  
 };

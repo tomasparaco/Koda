@@ -1,7 +1,8 @@
 import { useState, useEffect, FormEvent, useCallback } from 'react';
 import {
   MessageSquare, Vote, Wrench, Eye, Edit, Trash2, Send, CheckCircle,
-  Settings, Upload, Plus, FileText, Phone, X, AlertTriangle, ChevronDown, Star
+  Settings, Upload, Plus, FileText, Phone, X, AlertTriangle, ChevronDown, Star, 
+  Image as ImageIcon, Calendar
 } from 'lucide-react';
 import { ComunidadService, DocumentoCondominio, ContactoEmergencia } from '../../services/comunidad.service';
 import { TicketService, Ticket } from '../../services/ticket.service';
@@ -10,6 +11,7 @@ import type { Propietario } from '../../types';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+
 
 interface ComunidadViewProps {
   propiedad: Propietario;
@@ -53,6 +55,89 @@ export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadVi
 
   // ── Preview ─────────────────────────────────────────────────────────────────
   const [previewDoc, setPreviewDoc] = useState<DocumentoCondominio | null>(null);
+  // ── ESTADOS PARA COMUNICADOS ────────────────────────────────────────────────
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [comTitulo, setComTitulo] = useState('');
+  const [comCuerpo, setComCuerpo] = useState('');
+  const [comCategoria, setComCategoria] = useState<'Mantenimiento' | 'Informativo' | 'Urgente'>('Informativo');
+  const [comImagen, setComImagen] = useState<File | null>(null);
+  const [isSubmittingCom, setIsSubmittingCom] = useState(false);
+
+  // --- ESTADOS PARA EVENTOS ---
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [isSubmittingEvent, setIsSubmittingEvent] = useState(false);
+  const [newEvent, setNewEvent] = useState({
+    titulo: '',
+    descripcion: '',
+    fecha: '',
+    fecha_fin: '',
+    hora_inicio: '',
+    hora_fin: '',
+    tipo: 'Asamblea' as 'Asamblea' | 'Mantenimiento' | 'Social',
+    notificar_ahora: false
+  });
+
+
+  const handlePublicarComunicado = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingCom(true);
+
+    try {
+      const response = await ComunidadService.crearComunicado(
+        {
+          codigo_edificio: propiedad.codigo_edificio,
+          titulo: comTitulo,
+          cuerpo: comCuerpo,
+          categoria: comCategoria
+        },
+        comImagen
+      );
+
+      if (!response.exito) throw new Error(response.mensaje);
+
+      showToast('¡Comunicado publicado con éxito!', 'success');
+      cargarComunicados();
+
+      setIsModalOpen(false);
+      setComTitulo('');
+      setComCuerpo('');
+      setComCategoria('Informativo');
+      setComImagen(null);
+      
+    } catch (error: any) {
+      console.error('Error al publicar:', error);
+      showToast(error.message || 'Ocurrió un error al publicar.', 'error');
+    } finally {
+      setIsSubmittingCom(false);
+    }
+  };
+  // ────────────────────────────────────────────────────────────────────────────
+const handleGuardarEvento = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingEvent(true);
+    try {
+      const response = await ComunidadService.crearEvento({
+        ...newEvent,
+        codigo_edificio: propiedad.codigo_edificio
+      });
+
+      if (response.exito) {
+        showToast('¡Evento agendado con éxito!', 'success');
+        setIsEventModalOpen(false);
+        setNewEvent({ 
+          titulo: '', descripcion: '', fecha: '', fecha_fin: '', 
+          hora_inicio: '', hora_fin: '', tipo: 'Asamblea', 
+          notificar_ahora: false 
+        });
+      } else {
+        showToast(response.mensaje || 'Error al agendar', 'error');
+      }
+    } catch (error) {
+      showToast('Error de conexión', 'error');
+    } finally {
+      setIsSubmittingEvent(false);
+    }
+  };
 
   // ── Stubs para pestañas existentes ─────────────────────────────────────────
   const comunicados = [
@@ -63,6 +148,17 @@ export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadVi
   
   // <-- AQUÍ GUARDAMOS LAS VOTACIONES REALES DE LA BDD
   const [votacionesReales, setVotacionesReales] = useState<any[]>([]);
+  // Estado para guardar los comunicados de la base de datos
+  const [comunicadosLista, setComunicadosLista] = useState<any[]>([]);
+
+  // Función para ir a buscar los comunicados a Supabase
+  const cargarComunicados = async () => {
+    if (!propiedad.codigo_edificio) return;
+    const response = await ComunidadService.getComunicados(propiedad.codigo_edificio);
+    if (response.exito) {
+      setComunicadosLista(response.data);
+    }
+  };
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
 
@@ -106,6 +202,7 @@ export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadVi
     if (propiedad.codigo_edificio) {
       cargarConfiguraciones();
       cargarVotacionesReales();
+      cargarComunicados();
     }
   }, [propiedad.codigo_edificio]);
 
@@ -423,27 +520,71 @@ export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadVi
       {subTab === 'comunicados' && (
         <section className="animate-in fade-in">
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <MessageSquare className="w-5 h-5" /> Archivo de Comunicados
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <h2 className="text-xl font-semibold flex items-center gap-2 text-white">
+              <MessageSquare className="w-5 h-5 text-blue-400" /> Archivo de Comunicados
+            </h2>
+            
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 border border-blue-400/20 sm:ml-auto w-full sm:w-auto justify-center"
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo Comunicado
+            </button>
+            <button
+                onClick={() => setIsEventModalOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 flex items-center gap-2 transition-all active:scale-95"
+              >
+                <Calendar className="w-4 h-4" />
+                Agendar Evento
+              </button>
+          </div>
           </h2>
           <div className="space-y-3">
-            {comunicados.map(c => (
-              <div key={c.id} className="bg-white/10 border border-white/20 rounded-2xl p-5">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg mb-1">{c.titulo}</h3>
-                    <p className="text-sm text-blue-200">Enviado el {new Date(c.fecha).toLocaleDateString()}</p>
+            {comunicadosLista.length === 0 ? (
+              <p className="text-center text-white/50 py-8 bg-black/20 rounded-2xl border border-white/5">
+                No hay comunicados publicados en este edificio.
+              </p>
+            ) : (
+              comunicadosLista.map((c) => (
+                <div key={c.id} className="bg-white/10 border border-white/20 rounded-2xl p-5 relative overflow-hidden">
+                  {/* Etiqueta de Categoría */}
+                  <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl font-bold text-xs ${
+                    c.categoria === 'Urgente' ? 'bg-red-500 text-white' : 
+                    c.categoria === 'Mantenimiento' ? 'bg-orange-500 text-white' : 
+                    'bg-blue-500 text-white'
+                  }`}>
+                    {c.categoria}
                   </div>
-                  <div className="flex items-center gap-2 text-sm bg-white/10 px-3 py-1 rounded-full">
-                    <Eye className="w-4 h-4" /> <span>{c.vistos}/{c.total}</span>
+
+                  <div className="flex justify-between items-start mb-3 mt-2">
+                    <div className="flex-1 pr-4">
+                      <h3 className="font-bold text-lg mb-1 text-white">{c.titulo}</h3>
+                      <p className="text-sm text-blue-200">
+                        Publicado el {new Date(c.creado_en).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Cuerpo del mensaje */}
+                  <p className="text-white/80 text-sm mb-4 whitespace-pre-wrap">{c.cuerpo}</p>
+
+                  {/* Si tiene imagen adjunta, mostramos un indicador */}
+                  {c.imagen_url && (
+                    <div className="mb-4 inline-flex items-center gap-2 bg-blue-500/20 text-blue-300 px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-500/30">
+                      <ImageIcon className="w-4 h-4" /> Contiene imagen adjunta
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button className="flex-1 bg-red-500/20 hover:bg-red-500/40 text-red-300 py-2 rounded-xl font-semibold flex justify-center items-center gap-2 transition-colors border border-red-500/20 text-sm">
+                      <Trash2 className="w-4 h-4"/> Eliminar
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg font-semibold flex justify-center items-center gap-2 transition-colors"><Edit className="w-4 h-4"/> Editar</button>
-                  <button className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-semibold flex justify-center items-center gap-2 transition-colors"><Send className="w-4 h-4"/> Reenviar</button>
-                  <button className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </section>
       )}
@@ -958,7 +1099,252 @@ export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadVi
 
         </section>
       )}
+    { /* ── MODAL NUEVO COMUNICADO ────────────────────────────────────────── */ }
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !isSubmittingCom && setIsModalOpen(false)} />
+          
+          <div className="relative bg-[#0f172a] rounded-3xl w-full max-w-lg border border-white/10 overflow-hidden shadow-2xl z-10 animate-in zoom-in-95 fade-in duration-200">
+            {/* Header del modal */}
+            <div className="bg-white/5 border-b border-white/10 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-blue-400" /> Redactar Comunicado
+              </h3>
+              <button 
+                onClick={() => !isSubmittingCom && setIsModalOpen(false)} 
+                className="p-1.5 rounded-full hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Cuerpo del formulario */}
+            <form onSubmit={handlePublicarComunicado} className="p-6 space-y-5">
+              
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-white/80">Título del aviso</Label>
+                <Input 
+                  required 
+                  value={comTitulo} 
+                  onChange={(e) => setComTitulo(e.target.value)}
+                  placeholder="Ej: Mantenimiento de Ascensores"
+                  className="w-full bg-black/40 border-white/10 text-white placeholder:text-white/30 h-11"
+                />
+              </div>
 
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-white/80">Categoría</Label>
+                <select 
+                  value={comCategoria} 
+                  onChange={(e) => setComCategoria(e.target.value as any)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 h-11 text-white outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
+                >
+                  <option value="Informativo" className="bg-[#0f172a]">Informativo</option>
+                  <option value="Mantenimiento" className="bg-[#0f172a]">Mantenimiento</option>
+                  <option value="Urgente" className="bg-[#0f172a]">Urgente</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-white/80">Cuerpo del mensaje</Label>
+                <textarea 
+                  required 
+                  rows={4} 
+                  value={comCuerpo} 
+                  onChange={(e) => setComCuerpo(e.target.value)}
+                  placeholder="Detalla la información aquí..."
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-white/80 flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-blue-400" /> Imagen Adjunta (Opcional)
+                </Label>
+                <Input 
+                  type="file" 
+                  accept="image/*"
+                  onChange={(e) => setComImagen(e.target.files ? e.target.files[0] : null)}
+                  className="w-full bg-black/40 border-white/10 text-white/70 file:text-white file:bg-blue-600/80 file:border-none file:rounded-lg file:px-4 file:py-1 file:mr-4 hover:file:bg-blue-600 cursor-pointer h-11 pt-1.5"
+                />
+              </div>
+
+              {/* Botones */}
+              <div className="pt-2 flex gap-3">
+                <button 
+                  type="button" 
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-semibold text-sm transition-colors border border-white/10"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSubmittingCom}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:text-white/50 text-white font-semibold text-sm transition-colors flex justify-center items-center gap-2 shadow-lg shadow-blue-500/20"
+                >
+                  {isSubmittingCom ? 'Publicando...' : <><Send size={16} /> Publicar</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ─── MODAL DE AGENDAR EVENTO ─── */}
+      {isEventModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#1e293b] border border-white/10 rounded-3xl w-full max-w-lg p-6 shadow-2xl animate-in zoom-in duration-300">
+            
+            {/* Cabecera */}
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/20 rounded-lg">
+                  <Calendar className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white leading-none">Agendar Evento</h2>
+                  <p className="text-white/40 text-xs mt-1">Organiza la agenda del condominio</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsEventModalOpen(false)} 
+                className="text-white/40 hover:text-white p-2 hover:bg-white/5 rounded-full transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarEvento} className="space-y-4">
+              {/* Título */}
+              <div>
+                <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Título del Evento</Label>
+                <Input
+                  placeholder="Ej: Asamblea Extraordinaria de Propietarios"
+                  className="bg-black/40 border-white/10 text-white placeholder:text-white/20 focus:border-emerald-500/50 transition-all"
+                  value={newEvent.titulo}
+                  onChange={e => setNewEvent({...newEvent, titulo: e.target.value})}
+                  required
+                />
+              </div>
+
+              {/* Fechas: Inicio y Fin */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Fecha Inicio</Label>
+                  <Input
+                    type="date"
+                    className="bg-black/40 border-white/10 text-white focus:border-emerald-500/50"
+                    value={newEvent.fecha}
+                    onChange={e => setNewEvent({...newEvent, fecha: e.target.value})}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Fecha Fin</Label>
+                  <Input
+                    type="date"
+                    className="bg-black/40 border-white/10 text-white focus:border-emerald-500/50"
+                    value={newEvent.fecha_fin}
+                    onChange={e => setNewEvent({...newEvent, fecha_fin: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Horas y Categoría */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Hora Inicio</Label>
+                    <Input 
+                      type="time" 
+                      className="bg-black/40 border-white/10 text-white" 
+                      value={newEvent.hora_inicio} 
+                      onChange={e => setNewEvent({...newEvent, hora_inicio: e.target.value})} 
+                      required 
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Hora Fin</Label>
+                    <Input 
+                      type="time" 
+                      className="bg-black/40 border-white/10 text-white" 
+                      value={newEvent.hora_fin} 
+                      onChange={e => setNewEvent({...newEvent, hora_fin: e.target.value})} 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col">
+                  <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Categoría del Evento</Label>
+                  <div className="flex-1 flex flex-col gap-2">
+                    <select
+                      className={`w-full rounded-xl px-4 h-full text-white font-bold border-none outline-none transition-colors shadow-inner ${
+                        newEvent.tipo === 'Asamblea' ? 'bg-red-500/80 hover:bg-red-500' : 
+                        newEvent.tipo === 'Mantenimiento' ? 'bg-yellow-500/80 hover:bg-yellow-500 text-black' : 
+                        'bg-emerald-500/80 hover:bg-emerald-500'
+                      }`}
+                      value={newEvent.tipo}
+                      onChange={e => setNewEvent({...newEvent, tipo: e.target.value as any})}
+                    >
+                      <option value="Asamblea" className="bg-[#1e293b] text-white">Asamblea </option>
+                      <option value="Mantenimiento" className="bg-[#1e293b] text-white">Mantenimiento </option>
+                      <option value="Social" className="bg-[#1e293b] text-white">Social </option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Descripción */}
+              <div>
+                <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Descripción / Detalles</Label>
+                <textarea
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white h-24 text-sm focus:ring-1 focus:ring-emerald-500 outline-none placeholder:text-white/20"
+                  placeholder="Ej: Se requiere la presencia de todos los copropietarios..."
+                  value={newEvent.descripcion}
+                  onChange={e => setNewEvent({...newEvent, descripcion: e.target.value})}
+                />
+              </div>
+
+              {/* Toggle de Notificación */}
+              <label className="flex items-center gap-3 cursor-pointer p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition-all group">
+                <div className="relative flex items-center">
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    checked={newEvent.notificar_ahora}
+                    onChange={e => setNewEvent({...newEvent, notificar_ahora: e.target.checked})}
+                  />
+                  <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/40 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 peer-checked:after:bg-white"></div>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-white text-sm font-semibold group-hover:text-emerald-400 transition-colors">Notificar inmediatamente</span>
+                  <span className="text-white/30 text-[10px]">Envía correo automático a los vecinos</span>
+                </div>
+              </label>
+
+              {/* Botones de acción */}
+              <div className="flex gap-3 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsEventModalOpen(false)} 
+                  className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-semibold text-sm transition-colors border border-white/5"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSubmittingEvent}
+                  className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/50 text-white font-bold text-sm shadow-lg shadow-emerald-900/20 transition-all active:scale-95"
+                >
+                  {isSubmittingEvent ? 'Agendando...' : 'Agendar Evento'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
