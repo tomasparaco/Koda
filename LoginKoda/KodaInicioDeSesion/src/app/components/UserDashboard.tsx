@@ -4,7 +4,7 @@ import {
   Megaphone, Vote, Calendar, CheckCircle, Menu, X, Settings,
   HelpCircle, FileText, LogOut, Bell, ChevronLeft, ChevronRight,
   Download, Search, Filter, Phone, AlertCircle, TrendingUp, Mail,
-  Plus, ExternalLink, Building2, Calculator, RefreshCw, Receipt, Upload, Banknote, Lock, Eye, Star
+  Plus, ExternalLink, Building2, Calculator, RefreshCw, Receipt, Upload, Banknote, Lock, Eye, Star, ChevronDown
 } from 'lucide-react';
 import type { Propietario } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -331,12 +331,70 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
     }
   }, [userData?.id_propietario, isTicketModalOpen, activeTab]);
 
-  const oldCommuniques = [
-    { id: 1, title: 'Fumigación Programada', date: '10 Ene 2026', category: 'Mantenimiento' },
-    { id: 2, title: 'Cambio de Empresa de Ascensores', date: '5 Dic 2025', category: 'Servicios' },
-    { id: 3, title: 'Cierre de Piscina por Mantenimiento', date: '20 Nov 2025', category: 'Áreas Comunes' },
-    { id: 4, title: 'Nueva Empresa de Vigilancia', date: '15 Oct 2025', category: 'Seguridad' },
-  ];
+  // ── ESTADO Y REALTIME PARA COMUNICADOS ──────────────────────────────────────
+  const [comunicados, setComunicados] = useState<any[]>([]);
+  // ── ESTADOS PARA LA BÚSQUEDA Y FILTROS ──────────────────────────────────────
+  const [comSearchTerm, setComSearchTerm] = useState('');
+  const [comFilterTag, setComFilterTag] = useState<'Todos' | 'Mantenimiento' | 'Informativo' | 'Urgente'>('Todos');
+  const [expandedComId, setExpandedComId] = useState<string | null>(null);
+// --- ESTADOS PARA EL CALENDARIO ---
+  const [eventos, setEventos] = useState<any[]>([]);
+  const [fechaActual, setFechaActual] = useState(new Date());
+  const [eventoSeleccionado, setEventoSeleccionado] = useState<any | null>(null);
+
+  // Lógica para filtrar los comunicados en tiempo real
+  const comunicadosFiltrados = comunicados.filter((c) => {
+    // 1. Busca coincidencias en el título o en el cuerpo del mensaje
+    const coincideBusqueda = c.titulo.toLowerCase().includes(comSearchTerm.toLowerCase()) || 
+                             c.cuerpo.toLowerCase().includes(comSearchTerm.toLowerCase());
+    
+    // 2. Revisa si coincide con la etiqueta seleccionada (o si está en "Todos")
+    const coincideFiltro = comFilterTag === 'Todos' || c.categoria === comFilterTag;
+    
+    return coincideBusqueda && coincideFiltro;
+  });
+  
+
+  useEffect(() => {
+    if (!userData?.codigo_edificio) return;
+
+    // 1. Cargar los comunicados actuales al entrar
+    const fetchComunicados = async () => {
+      const response = await ComunidadService.getComunicados(userData.codigo_edificio);
+      if (response.exito && response.data) {
+        setComunicados(response.data);
+      }
+      const envRes = await ComunidadService.getEventos(userData.codigo_edificio);
+      if (envRes.exito && envRes.data) {
+        setEventos(envRes.data);
+      }
+    };
+    
+    fetchComunicados();
+
+    // 2. MAGIA: Suscribirse a cambios en tiempo real (Supabase Realtime)
+    const channel = supabase
+      .channel('comunicados-vecinos')
+      .on(
+        'postgres_changes',
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'comunicados',
+          filter: `codigo_edificio=eq.${userData.codigo_edificio}` // Solo escucha avisos de SU edificio
+        },
+        (payload) => {
+          // Cuando el admin publica, metemos el nuevo aviso al inicio de la lista
+          setComunicados((prev) => [payload.new, ...prev]);
+        }
+      )
+      .subscribe();
+
+    // Limpiar suscripción al salir
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userData?.codigo_edificio]);
 
   const aliquot = Number(userData?.alicuota) || 0;
   const yourShare = (totalBuildingExpense * aliquot) / 100;
@@ -1203,26 +1261,198 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             )}
           </Dialog>
 
-          {/* Comunicados */}
-          <div className="space-y-4">
+          {/* CARTELERA DE COMUNICADOS REALES */}
+          <div className="space-y-4 mb-8">
             <h2 className="text-white text-xl px-2 font-semibold flex items-center gap-2">
-              <Megaphone className="w-5 h-5 text-blue-400" /> Comunicados
+              <Megaphone className="w-5 h-5 text-blue-400" /> Cartelera Oficial
             </h2>
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-5 border border-white/20">
-              <div className="space-y-3">
-                {oldCommuniques.map(comm => (
-                  <div key={comm.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 hover:bg-white/10 rounded-xl transition-all border border-transparent hover:border-white/10">
-                    <div>
-                      <p className="font-semibold text-white">{comm.title}</p>
-                      <p className="text-sm text-blue-300 font-medium mt-1">{comm.category}</p>
-                    </div>
-                    <span className="text-xs text-white/60 mt-2 sm:mt-0 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 self-start sm:self-center">
-                      {comm.date}
-                    </span>
-                  </div>
-                ))}
+
+            {/* 1. BARRA DE BÚSQUEDA Y FILTROS */}
+            <div className="flex flex-col sm:flex-row gap-3 px-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
+                <input 
+                  type="text" 
+                  placeholder="Buscar por título o contenido..." 
+                  value={comSearchTerm}
+                  onChange={(e) => setComSearchTerm(e.target.value)}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl pl-10 pr-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+              </div>
+              <div className="relative min-w-[160px]">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50 z-10" />
+                <select 
+                  value={comFilterTag}
+                  onChange={(e) => setComFilterTag(e.target.value as any)}
+                  className="w-full bg-transparent border border-white/20 rounded-xl pl-10 pr-8 py-2.5 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 relative z-0"
+                >
+                  <option value="Todos" className="bg-[#0f172a]">Todas las categorías</option>
+                  <option value="Informativo" className="bg-[#0f172a]">Informativo</option>
+                  <option value="Mantenimiento" className="bg-[#0f172a]">Mantenimiento</option>
+                  <option value="Urgente" className="bg-[#0f172a]">Urgente</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50 pointer-events-none z-10" />
               </div>
             </div>
+
+            {/* 2. LISTA DE TARJETAS EXPANDIBLES */}
+            <div className="space-y-3 mt-4">
+              {comunicadosFiltrados.length === 0 ? (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center">
+                  <p className="text-white/50 text-sm">No se encontraron comunicados con esos filtros.</p>
+                </div>
+              ) : (
+                comunicadosFiltrados.map((comunicado) => {
+                  const isExpanded = expandedComId === comunicado.id;
+                  
+                  return (
+                    <div 
+                      key={comunicado.id} 
+                      onClick={() => setExpandedComId(isExpanded ? null : comunicado.id)}
+                      className={`bg-white/10 backdrop-blur-lg rounded-2xl p-5 border cursor-pointer transition-all duration-300 relative overflow-hidden group hover:bg-white/15 ${
+                        isExpanded ? 'border-blue-500/50 shadow-lg shadow-blue-500/10' : 'border-white/20'
+                      }`}
+                    >
+                      {/* Etiqueta de Categoría (Tag) */}
+                      <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl font-bold text-xs shadow-md ${
+                        comunicado.categoria === 'Urgente' ? 'bg-red-500 text-white' : 
+                        comunicado.categoria === 'Mantenimiento' ? 'bg-orange-500 text-white' : 
+                        'bg-blue-500 text-white'
+                      }`}>
+                        {comunicado.categoria}
+                      </div>
+
+                      {/* Cabecera: Título y Fecha */}
+                      <div className="pr-20">
+                        <h3 className="text-white font-bold text-lg mb-1 leading-tight">{comunicado.titulo}</h3>
+                        <div className="flex items-center gap-2 text-white/50 text-xs font-medium mb-3">
+                          <Calendar className="w-3.5 h-3.5" />
+                          {new Date(comunicado.creado_en).toLocaleDateString('es-ES', { 
+                            year: 'numeric', month: 'long', day: 'numeric' 
+                          })}
+                        </div>
+                      </div>
+                      
+                      {/* Cuerpo del mensaje: Resumen (line-clamp) vs Completo */}
+                      <div className={`text-white/80 text-sm leading-relaxed transition-all duration-300 ${isExpanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
+                        {comunicado.cuerpo}
+                      </div>
+
+                      {/* Imagen Adjunta (Solo visible al expandir) */}
+                      {isExpanded && comunicado.imagen_url && (
+                        <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                          <div className="rounded-xl overflow-hidden border border-white/10 max-h-[400px] bg-black/50">
+                             <img 
+                               src={comunicado.imagen_url} 
+                               alt={comunicado.titulo} 
+                               className="w-full h-full object-contain"
+                             />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Icono indicador de expandir/contraer */}
+                      <div className="mt-3 flex justify-center border-t border-white/5 pt-2">
+                        <ChevronDown className={`w-5 h-5 text-white/40 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-blue-400' : ''}`} />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+          {/* ─── CALENDARIO DE EVENTOS ─── */}
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-md mb-8">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-blue-400" /> Agenda del Edificio
+              </h3>
+              <div className="flex items-center gap-4 text-white/80 bg-white/5 px-4 py-2 rounded-xl border border-white/5">
+                <button onClick={() => setFechaActual(new Date(fechaActual.setMonth(fechaActual.getMonth() - 1)))} className="hover:text-blue-400">
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className="text-sm font-bold min-w-[120px] text-center capitalize">
+                  {fechaActual.toLocaleString('es-ES', { month: 'long', year: 'numeric' })}
+                </span>
+                <button onClick={() => setFechaActual(new Date(fechaActual.setMonth(fechaActual.getMonth() + 1)))} className="hover:text-blue-400">
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Grilla del Calendario */}
+            <div className="grid grid-cols-7 gap-2 mb-4">
+              {['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'].map(d => (
+                <div key={d} className="text-center text-[10px] uppercase tracking-widest text-white/30 font-bold py-2">{d}</div>
+              ))}
+              
+              {Array.from({ length: new Date(fechaActual.getFullYear(), fechaActual.getMonth() + 1, 0).getDate() }).map((_, i) => {
+                const dia = i + 1;
+                const fechaIterada = new Date(fechaActual.getFullYear(), fechaActual.getMonth(), dia);
+                const esPasado = fechaIterada < new Date().setHours(0,0,0,0);
+                
+                const eventosDelDia = eventos.filter(e => {
+                  const f = new Date(e.fecha);
+                  return f.getUTCDate() === dia && f.getUTCMonth() === fechaActual.getMonth() && f.getUTCFullYear() === fechaActual.getFullYear();
+                });
+
+                return (
+                  <button
+                    key={i}
+                    onClick={() => eventosDelDia.length > 0 && setEventoSeleccionado(eventosDelDia[0])}
+                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all relative ${
+                      esPasado ? 'opacity-20' : 'hover:bg-white/10 active:scale-90'
+                    } ${eventosDelDia.length > 0 ? 'bg-white/10 border border-white/20 shadow-lg shadow-black/20' : 'bg-white/[0.02]'}`}
+                  >
+                    <span className={`text-sm font-semibold ${eventosDelDia.length > 0 ? 'text-blue-400' : 'text-white/60'}`}>{dia}</span>
+                    <div className="flex gap-0.5">
+                      {eventosDelDia.slice(0, 3).map((e, idx) => (
+                        <div key={idx} className={`w-1.5 h-1.5 rounded-full ${
+                          e.tipo === 'Asamblea' ? 'bg-red-500' : 
+                          e.tipo === 'Mantenimiento' ? 'bg-yellow-500' : 'bg-emerald-500'
+                        }`} />
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Tarjeta de Detalle Dinámica */}
+            {eventoSeleccionado && (
+              <div className="mt-6 p-5 bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-white/10 rounded-2xl animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase tracking-tighter px-2 py-0.5 rounded-md ${
+                        eventoSeleccionado.tipo === 'Asamblea' ? 'bg-red-500 text-white' : 
+                        eventoSeleccionado.tipo === 'Mantenimiento' ? 'bg-yellow-500 text-black' : 'bg-emerald-500 text-white'
+                      }`}>
+                        {eventoSeleccionado.tipo}
+                      </span>
+                      <span className="text-white/40 text-[10px] font-bold">EVENTO CONFIRMADO</span>
+                    </div>
+                    <h4 className="text-white text-lg font-bold leading-tight">{eventoSeleccionado.titulo}</h4>
+                    <div className="flex flex-wrap gap-4 text-white/60 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-blue-400" />
+                        {eventoSeleccionado.hora_inicio.slice(0,5)} - {eventoSeleccionado.hora_fin.slice(0,5)}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                        {new Date(eventoSeleccionado.fecha).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                      </div>
+                    </div>
+                    {eventoSeleccionado.descripcion && (
+                      <p className="text-white/80 text-sm bg-black/20 p-3 rounded-xl border border-white/5">{eventoSeleccionado.descripcion}</p>
+                    )}
+                  </div>
+                  <button onClick={() => setEventoSeleccionado(null)} className="bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors">
+                    <X className="w-5 h-5 text-white/40" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
