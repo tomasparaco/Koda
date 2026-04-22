@@ -19,7 +19,7 @@ import ReportPaymentModal from './ReportPaymentModal';
 import { LegalTermsModal } from './LegalTermsModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { ReciboService } from '../../services/recibo.service';
-import kodaLogo from '../../assets/LogoKoda4.png';
+import kuotaLogo from '../../assets/LogoKuota4.png';
 import { TicketService } from '../../services/ticket.service';
 import ReportTicketModal from './ReportTicketModal';
 import UserVotacionesModal from './UserVotacionesModal';
@@ -134,7 +134,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             Accept: "application/json"
         },
         body: JSON.stringify({
-            _subject: `Soporte Técnico Koda - Apto ${userData?.apartamento}`,
+            _subject: `Soporte Técnico Kuota - Apto ${userData?.apartamento}`,
             _template: "table",
             Nombre: userData?.nombre || "Usuario no identificado",
             Apartamento: userData?.apartamento || "Desconocido",
@@ -143,7 +143,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
         })
       });
       if (response.ok) {
-        alert("¡Mensaje enviado exitosamente a Soporte Koda! Te contactaremos pronto.");
+        alert("¡Mensaje enviado exitosamente a Soporte Kuota! Te contactaremos pronto.");
         setSupportMessage('');
       } else {
         alert("Ocurrió un error al enviar tu mensaje. Intenta de nuevo.");
@@ -505,7 +505,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
               padding-bottom: 20px;
               border-bottom: 2px solid #e5e7eb;
             }
-            .koda-logo-img {
+            .kuota-logo-img {
               max-height: 60px; 
               width: auto;
               object-fit: contain;
@@ -523,7 +523,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
         </head>
         <body>
           <div class="logo-header">
-            <img src="${kodaLogo}" alt="Logo Koda" class="koda-logo-img" />
+            <img src="${kuotaLogo}" alt="Logo Kuota" class="kuota-logo-img" />
             <div class="header-text">
               <strong>Recibo de Condominio</strong><br/>
               Apto ${userData?.apartamento}
@@ -550,7 +550,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
       <div className="sticky top-0 z-40 bg-gradient-to-b from-blue-950/95 to-blue-900/85 backdrop-blur-lg border-b border-white/10">
         <div className="max-w-4xl mx-auto px-4 py-5 flex items-center justify-between">
           <div>
-            <h1 className="text-white text-3xl font-bold tracking-wide">Koda</h1>
+            <h1 className="text-white text-3xl font-bold tracking-wide">Kuota</h1>
             <p className="text-white/50 text-sm font-light">tu comunidad</p>
           </div>
           <div className="flex items-center gap-4">
@@ -1389,7 +1389,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
               {Array.from({ length: new Date(fechaActual.getFullYear(), fechaActual.getMonth() + 1, 0).getDate() }).map((_, i) => {
                 const dia = i + 1;
                 const fechaIterada = new Date(fechaActual.getFullYear(), fechaActual.getMonth(), dia);
-                const esPasado = fechaIterada < new Date().setHours(0,0,0,0);
+                const esPasado = fechaIterada.getTime() < new Date().setHours(0,0,0,0);
                 
                 const eventosDelDia = eventos.filter(e => {
                   const f = new Date(e.fecha);
@@ -1603,7 +1603,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                   a: "Dirígete a la pestaña de Inicio y selecciona 'REPORTAR PAGO'. Completa el formulario con la referencia y fecha exacta, y sube el comprobante en formato imagen o PDF."
                 },
                 {
-                  q: "¿Cómo cambio mi clave de acceso a Koda?",
+                  q: "¿Cómo cambio mi clave de acceso a Kuota?",
                   a: "Puedes cambiar tu contraseña desde la pantalla de Perfil (accesible en el menú superior derecho). Busca la sección de acceso e ingresa tus nuevos datos."
                 },
                 {
@@ -1642,7 +1642,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
             <h3 className="text-white text-xl px-2 font-semibold text-center">Soporte Técnico Especializado</h3>
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 shadow-lg flex flex-col items-center justify-center max-w-2xl mx-auto">
               <form onSubmit={handleSupportSubmit} className="flex flex-col items-center text-center space-y-4 w-full">
-                <h4 className="text-white font-bold text-2xl mb-1">Contacto Koda</h4>
+                <h4 className="text-white font-bold text-2xl mb-1">Contacto Kuota</h4>
                 <p className="text-white/70 text-sm mb-4 max-w-md">
                   Si experimentas problemas técnicos con la aplicación, errores al iniciar sesión o fallos de conexión, nuestro equipo de ingenieros está para asistirte.
                 </p>
@@ -1766,7 +1766,7 @@ export default function UserDashboard({ onLogout, userData, onBackToSelector }: 
                 </div>
               </div>
               <p className="text-center text-xs" style={{ color: '#9ca3af', marginTop: '32px' }}>
-                Este es un documento generado automáticamente por el sistema Koda.
+                Este es un documento generado automáticamente por el sistema Kuota.
               </p>
             </div>
 

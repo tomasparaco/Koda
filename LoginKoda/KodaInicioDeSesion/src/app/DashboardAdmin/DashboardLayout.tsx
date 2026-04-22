@@ -28,7 +28,7 @@ export default function DashboardLayout({ propiedad, onLogout, onBackToSelector 
       <header className="sticky top-0 z-30 bg-gradient-to-b from-[#172c5f] to-[#1e3a8a] shadow-lg backdrop-blur-sm">
         <div className="flex items-center justify-between p-4 max-w-4xl mx-auto">
           <div>
-            <h1 className="text-2xl font-bold">Koda</h1>
+            <h1 className="text-2xl font-bold">Kuota</h1>
             <p className="text-sm text-blue-200">tu comunidad</p>
           </div>
           <div className="flex items-center gap-3">
@@ -170,7 +170,7 @@ export default function DashboardLayout({ propiedad, onLogout, onBackToSelector 
                 <LogOut className="w-5 h-5" />
                 <span className="font-medium">Cerrar Sesión</span>
               </button>
-              <p className="text-center text-xs text-gray-400 mt-4">Koda Dashboard v1.0</p>
+              <p className="text-center text-xs text-gray-400 mt-4">Kuota Dashboard v1.0</p>
             </div>
           </div>
         </>

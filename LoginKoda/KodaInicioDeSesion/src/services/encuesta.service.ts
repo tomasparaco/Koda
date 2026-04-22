@@ -51,7 +51,7 @@ export const EncuestaService = {
           await supabase.functions.invoke('enviar-correos-votacion', {
             body: { 
               destinatarios: correos, 
-              asunto: "Nueva Asamblea/Votación Abierta en Koda", 
+              asunto: "Nueva Asamblea/Votación Abierta en Kuota", 
               pregunta: pregunta,
               fecha_cierre: fecha_cierre
             }

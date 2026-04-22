@@ -381,7 +381,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
               Accept: "application/json"
             },
             body: JSON.stringify({
-              _subject: `Actualización de su Ticket #${selectedTicket.id_ticket} - Koda Mantenimiento`,
+              _subject: `Actualización de su Ticket #${selectedTicket.id_ticket} - Kuota Mantenimiento`,
               _template: "table",
               "Asunto del Ticket": selectedTicket.titulo,
               "Nuevo Estado": estadoLegible,

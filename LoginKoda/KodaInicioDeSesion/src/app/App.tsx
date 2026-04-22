@@ -1,7 +1,7 @@
 //
 import React, { useState, useEffect, useMemo } from 'react';
 import { Mail, Lock, ArrowLeft, KeyRound } from 'lucide-react';
-import kodaLogo from '../assets/LogoKoda4.png';
+import kuotaLogo from '../assets/LogoKuota4.png';
 import { AuthService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import type { Propietario } from '../types';
@@ -244,9 +244,9 @@ export default function App() {
           <div className="bg-gradient-to-b from-[#6BA3D8] to-[#4A7FDB] rounded-[2.5rem] p-8 shadow-2xl">
             <div className="flex flex-col items-center mb-8">
               <div className="w-28 h-28 rounded-3xl bg-white flex items-center justify-center mb-4 shadow-lg p-3">
-                <img src={kodaLogo} alt="Koda Logo" className="w-full h-full object-contain" />
+                <img src={kuotaLogo} alt="Kuota Logo" className="w-full h-full object-contain" />
               </div>
-              <h1 className="text-3xl font-bold text-white mb-2">Koda</h1>
+              <h1 className="text-3xl font-bold text-white mb-2">Kuota</h1>
               <h2 className="text-xl font-semibold text-white tracking-wide">{titulo}</h2>
             </div>
 

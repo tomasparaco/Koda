@@ -24,7 +24,7 @@ export function LegalTermsModal({ isOpen, onClose }: LegalTermsModalProps) {
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-white leading-tight">Políticas y Términos Legales</h2>
-                            <p className="text-blue-100 text-xs">Válido para la plataforma administrativa Koda</p>
+                            <p className="text-blue-100 text-xs">Válido para la plataforma administrativa Kuota</p>
                         </div>
                     </div>
                     <button
@@ -49,16 +49,16 @@ export function LegalTermsModal({ isOpen, onClose }: LegalTermsModalProps) {
                         </h3>
                         <div className="space-y-4 text-gray-600 text-sm leading-relaxed">
                             <p>
-                                <strong>1. Aceptación de los Términos:</strong> Al acceder y utilizar la plataforma de administración de condominios Koda (en adelante "El Servicio"), los administradores y copropietarios (en adelante "Los Usuarios") aceptan estar sujetos a estos Términos del Servicio y a todas las leyes y regulaciones aplicables.
+                                <strong>1. Aceptación de los Términos:</strong> Al acceder y utilizar la plataforma de administración de condominios Kuota (en adelante "El Servicio"), los administradores y copropietarios (en adelante "Los Usuarios") aceptan estar sujetos a estos Términos del Servicio y a todas las leyes y regulaciones aplicables.
                             </p>
                             <p>
                                 <strong>2. Uso de la Plataforma:</strong> El Servicio está destinado exclusivamente a la gestión administrativa, comunicación y manejo financiero interno de condominios residenciales o comerciales. Está estrictamente prohibido utilizar la plataforma para actividades ilícitas, fraudulentas o que vulneren la convivencia del edificio.
                             </p>
                             <p>
-                                <strong>3. Responsabilidad Financiera:</strong> Koda proporciona herramientas de registro y cálculo (incluyendo conectividad con tasas del Banco Central). Sin embargo, la plataforma actúa únicamente como un intermediario contable de la información ingresada por las juntas administradoras. Koda no es una entidad financiera, no retiene fondos y no se hace responsable por errores humanos en la emisión de recibos, aprobaciones de pago incorrectas o disputas de deudas entre el condominio y los propietarios.
+                                <strong>3. Responsabilidad Financiera:</strong> Kuota proporciona herramientas de registro y cálculo (incluyendo conectividad con tasas del Banco Central). Sin embargo, la plataforma actúa únicamente como un intermediario contable de la información ingresada por las juntas administradoras. Kuota no es una entidad financiera, no retiene fondos y no se hace responsable por errores humanos en la emisión de recibos, aprobaciones de pago incorrectas o disputas de deudas entre el condominio y los propietarios.
                             </p>
                             <p>
-                                <strong>4. Disponibilidad del Sistema:</strong> Nos esforzamos por mantener la plataforma operativa las 24 horas del día. No obstante, Koda se reserva el derecho de interrumpir el servicio temporalmente para mantenimientos programados o actualizaciones de seguridad sin previo aviso, aunque intentaremos notificar mediante "Alertas Urgentes".
+                                <strong>4. Disponibilidad del Sistema:</strong> Nos esforzamos por mantener la plataforma operativa las 24 horas del día. No obstante, Kuota se reserva el derecho de interrumpir el servicio temporalmente para mantenimientos programados o actualizaciones de seguridad sin previo aviso, aunque intentaremos notificar mediante "Alertas Urgentes".
                             </p>
                         </div>
                     </section>
@@ -78,7 +78,7 @@ export function LegalTermsModal({ isOpen, onClose }: LegalTermsModalProps) {
                                 <strong>2. Uso de la Información:</strong> Los datos proporcionados son utilizados exclusivamente para la creación del Directorio de Propietarios, el Libro de Transacciones, el cálculo de deudas y el envío de notificaciones y comunicados del edificio.
                             </p>
                             <p>
-                                <strong>3. Compartición de Datos Estricta:</strong> Koda asegura que la información de los usuarios se encuentra asilada criptográficamente en nuestros servidores provistos por Supabase. <strong>En ningún caso</strong> venderemos o alquilaremos sus datos personales a terceros, anunciantes o agencias de marketing. Su administrador solo tiene acceso a la información financiera pertinente a su residencia en específico.
+                                <strong>3. Compartición de Datos Estricta:</strong> Kuota asegura que la información de los usuarios se encuentra asilada criptográficamente en nuestros servidores provistos por Supabase. <strong>En ningún caso</strong> venderemos o alquilaremos sus datos personales a terceros, anunciantes o agencias de marketing. Su administrador solo tiene acceso a la información financiera pertinente a su residencia en específico.
                             </p>
                             <p>
                                 <strong>4. Retención y Eliminación:</strong> Los datos financieros y el historial de pagos (recibos) se mantendrán almacenados durante el tiempo de vida del condominio en la plataforma por motivos de control administrativo y auditoría. Si un residente vende su propiedad, su información de contacto puede ser anonimizada a petición de la administración del edificio correspondiente.

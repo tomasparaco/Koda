@@ -2,7 +2,7 @@ export const bcvService = {
     getLatestRate: async (): Promise<{ rate: number; lastUpdate: string; isFallback: boolean }> => {
         try {
             // Intentamos cargar desde localStorage primero para no saturar APIs gratuitamente
-            const cachedString = localStorage.getItem('koda_bcv_rate');
+            const cachedString = localStorage.getItem('kuota_bcv_rate');
 
             if (cachedString) {
                 const cached = JSON.parse(cachedString);
@@ -32,14 +32,14 @@ export const bcvService = {
             };
 
             // Guardamos en caché
-            localStorage.setItem('koda_bcv_rate', JSON.stringify(result));
+            localStorage.setItem('kuota_bcv_rate', JSON.stringify(result));
             return result;
 
         } catch (error) {
             console.warn('Error fetching BCV API, using fallback or cached data', error);
 
             // Intentamos volver a usar la caché si existe, aunque esté vieja
-            const cachedString = localStorage.getItem('koda_bcv_rate');
+            const cachedString = localStorage.getItem('kuota_bcv_rate');
             if (cachedString) {
                 const cached = JSON.parse(cachedString);
                 return { rate: cached.rate, lastUpdate: cached.lastUpdate + " (Sin conexión)", isFallback: true };
