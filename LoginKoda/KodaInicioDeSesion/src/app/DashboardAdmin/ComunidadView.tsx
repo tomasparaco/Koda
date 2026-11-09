@@ -2,20 +2,25 @@ import { useState, useEffect, FormEvent, useCallback } from 'react';
 import {
   MessageSquare, Vote, Wrench, Eye, Edit, Trash2, Send, CheckCircle,
   Settings, Upload, Plus, FileText, Phone, X, AlertTriangle, ChevronDown, Star, 
-  Image as ImageIcon, Calendar
+  Image as ImageIcon, Calendar, Search, Filter, RefreshCw, Megaphone,
+  ChevronLeft, ChevronRight, ChevronUp, Clock
 } from 'lucide-react';
 import { ComunidadService, DocumentoCondominio, ContactoEmergencia } from '../../services/comunidad.service';
 import { TicketService, Ticket } from '../../services/ticket.service';
-import { EncuestaService } from '../../services/encuesta.service'; // <-- SERVICIO REAL IMPORTADO
+import { EncuestaService } from '../../services/encuesta.service';
+import { NotificacionService } from '../../services/notificacion.service';
 import type { Propietario } from '../../types';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { supabase } from '../../lib/supabase';
 
 
 interface ComunidadViewProps {
   propiedad: Propietario;
   onNavigateToVotaciones?: () => void; // <-- PARA EL ENLACE AL CREADOR DE ENCUESTAS
+  initialAction?: 'comunicado' | 'evento' | null;
+  onActionConsumed?: () => void;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -33,7 +38,7 @@ interface ConfirmState {
   onConfirm: () => void;
 }
 
-export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadViewProps) {
+export function ComunidadView({ propiedad, onNavigateToVotaciones, initialAction, onActionConsumed }: ComunidadViewProps) {
   const [subTab, setSubTab] = useState<'comunicados' | 'votaciones' | 'tickets' | 'configuraciones'>('comunicados');
 
   // ── Toasts ──────────────────────────────────────────────────────────────────
@@ -62,10 +67,26 @@ export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadVi
   const [comCategoria, setComCategoria] = useState<'Mantenimiento' | 'Informativo' | 'Urgente'>('Informativo');
   const [comImagen, setComImagen] = useState<File | null>(null);
   const [isSubmittingCom, setIsSubmittingCom] = useState(false);
+  const [comNotificar, setComNotificar] = useState(false);
+  const [selectedComunicado, setSelectedComunicado] = useState<any | null>(null);
+
+  // ── ESTADOS PARA FILTROS DE COMUNICADOS ────────────────────────────────────
+  const [comSearchTerm, setComSearchTerm] = useState('');
+  const [comFilterTag, setComFilterTag] = useState<'Todos' | 'Mantenimiento' | 'Informativo' | 'Urgente'>('Todos');
+  const [comDateFrom, setComDateFrom] = useState('');
+  const [comDateTo, setComDateTo] = useState('');
+  const [comunicadoLimit, setComunicadoLimit] = useState(3);
+
+  // --- ESTADOS PARA EVENTOS ---
+  const [eventos, setEventos] = useState<any[]>([]);
+  const [fechaActual, setFechaActual] = useState(new Date());
+  const [eventoSeleccionado, setEventoSeleccionado] = useState<any | null>(null);
 
   // --- ESTADOS PARA EVENTOS ---
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isSubmittingEvent, setIsSubmittingEvent] = useState(false);
+  const [isEditingEvent, setIsEditingEvent] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [newEvent, setNewEvent] = useState({
     titulo: '',
     descripcion: '',
@@ -77,6 +98,16 @@ export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadVi
     notificar_ahora: false
   });
 
+
+  useEffect(() => {
+    if (initialAction === 'comunicado') {
+      setIsModalOpen(true);
+      onActionConsumed?.();
+    } else if (initialAction === 'evento') {
+      setIsEventModalOpen(true);
+      onActionConsumed?.();
+    }
+  }, [initialAction, onActionConsumed]);
 
   const handlePublicarComunicado = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,7 +129,18 @@ export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadVi
       showToast('¡Comunicado publicado con éxito!', 'success');
       cargarComunicados();
 
+      // Notificar a todos los usuarios del edificio
+      await NotificacionService.crear({
+        codigo_edificio: propiedad.codigo_edificio,
+        tipo: 'comunicado',
+        titulo: 'Nuevo Comunicado',
+        mensaje: `"${comTitulo}" — ${comCategoria}`,
+        destinatario: 'usuarios',
+        enviar_correo: comNotificar,
+      });
+
       setIsModalOpen(false);
+
       setComTitulo('');
       setComCuerpo('');
       setComCategoria('Informativo');
@@ -112,23 +154,43 @@ export function ComunidadView({ propiedad, onNavigateToVotaciones }: ComunidadVi
     }
   };
   // ────────────────────────────────────────────────────────────────────────────
-const handleGuardarEvento = async (e: FormEvent) => {
+  const handleGuardarEvento = async (e: FormEvent) => {
     e.preventDefault();
     setIsSubmittingEvent(true);
     try {
-      const response = await ComunidadService.crearEvento({
-        ...newEvent,
-        codigo_edificio: propiedad.codigo_edificio
-      });
+      let response;
+      if (isEditingEvent && editingEventId) {
+        response = await ComunidadService.updateEvento(editingEventId, newEvent);
+      } else {
+        response = await ComunidadService.crearEvento({
+          ...newEvent,
+          codigo_edificio: propiedad.codigo_edificio
+        });
+      }
 
       if (response.exito) {
-        showToast('¡Evento agendado con éxito!', 'success');
+        showToast(`¡Evento ${isEditingEvent ? 'modificado' : 'agendado'} con éxito!`, 'success');
         setIsEventModalOpen(false);
+
+        // Notificar a todos los usuarios del edificio
+        await NotificacionService.crear({
+          codigo_edificio: propiedad.codigo_edificio,
+          tipo: 'evento',
+          titulo: isEditingEvent ? 'Evento Reprogramado' : 'Nuevo Evento',
+          mensaje: `"${newEvent.titulo}" — ${newEvent.fecha}`,
+          destinatario: 'usuarios',
+          enviar_correo: newEvent.notificar_ahora,
+        });
+        
+        cargarComunicados();
+
         setNewEvent({ 
           titulo: '', descripcion: '', fecha: '', fecha_fin: '', 
           hora_inicio: '', hora_fin: '', tipo: 'Asamblea', 
           notificar_ahora: false 
         });
+        setIsEditingEvent(false);
+        setEditingEventId(null);
       } else {
         showToast(response.mensaje || 'Error al agendar', 'error');
       }
@@ -137,6 +199,64 @@ const handleGuardarEvento = async (e: FormEvent) => {
     } finally {
       setIsSubmittingEvent(false);
     }
+  };
+
+  const handleEditarEvento = (evento: any) => {
+    setNewEvent({
+      titulo: evento.titulo,
+      descripcion: evento.descripcion || '',
+      fecha: evento.fecha,
+      fecha_fin: evento.fecha_fin || '',
+      hora_inicio: evento.hora_inicio,
+      hora_fin: evento.hora_fin,
+      tipo: evento.tipo,
+      notificar_ahora: false
+    });
+    setIsEditingEvent(true);
+    setEditingEventId(evento.id);
+    setIsEventModalOpen(true);
+  };
+
+  const handleEliminarEvento = (evento: any) => {
+    askConfirm(
+      'Eliminar Evento',
+      `¿Estás seguro de cancelar o eliminar el evento "${evento.titulo}"? Esta acción no puede revertirse.`,
+      async () => {
+        const result = await ComunidadService.deleteEvento(String(evento.id));
+        if (result.exito) {
+          setEventoSeleccionado(null);
+          cargarComunicados();
+          showToast('✨ Evento borrado con éxito.', 'success');
+          // Notificar
+          await NotificacionService.crear({
+            codigo_edificio: propiedad.codigo_edificio,
+            tipo: 'evento',
+            titulo: 'Evento Cancelado',
+            mensaje: `El evento "${evento.titulo}" programado para el ${new Date(evento.fecha).toLocaleDateString()} ha sido cancelado.`,
+            destinatario: 'usuarios',
+          });
+        } else {
+          showToast('Error al eliminar evento: ' + result.mensaje, 'error');
+        }
+      }
+    );
+  };
+
+
+  const handleEliminarComunicado = (id: any, titulo: string, imagen_url?: string | null) => {
+    askConfirm(
+      'Eliminar Comunicado',
+      `¿Estás seguro de eliminar el comunicado "${titulo}"? Esta acción no se puede deshacer.`,
+      async () => {
+        const result = await ComunidadService.deleteComunicado(String(id), imagen_url);
+        if (result.exito) {
+          setComunicadosLista(prev => prev.filter(c => c.id !== id));
+          showToast('✨ Comunicado borrado con éxito.', 'success');
+        } else {
+          showToast('Error al eliminar: ' + result.mensaje, 'error');
+        }
+      }
+    );
   };
 
   // ── Stubs para pestañas existentes ─────────────────────────────────────────
@@ -148,6 +268,60 @@ const handleGuardarEvento = async (e: FormEvent) => {
   
   // <-- AQUÍ GUARDAMOS LAS VOTACIONES REALES DE LA BDD
   const [votacionesReales, setVotacionesReales] = useState<any[]>([]);
+  const [votacionesFilter, setVotacionesFilter] = useState<'todas' | 'activas' | 'cerradas'>('todas');
+  const [selectedVotacion, setSelectedVotacion] = useState<any | null>(null);
+
+  // Survey creation state
+  const [showCrearEncuestaModal, setShowCrearEncuestaModal] = useState(false);
+  const [encPregunta, setEncPregunta] = useState('');
+  const [encOpciones, setEncOpciones] = useState(['Sí', 'No', 'Abstención']);
+  const [encFechaCierre, setEncFechaCierre] = useState('');
+  const [encArchivo, setEncArchivo] = useState<File | null>(null);
+  const [encArchivoPreview, setEncArchivoPreview] = useState<string | null>(null);
+  const [isCreandoEnc, setIsCreandoEnc] = useState(false);
+
+  const handleEncArchivoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      setEncArchivo(file);
+      setEncArchivoPreview(file.type.startsWith('image/') ? URL.createObjectURL(file) : 'pdf');
+    }
+  };
+
+  const handleCrearEncuesta = async () => {
+    if (!encPregunta || !encFechaCierre || !propiedad.codigo_edificio) {
+      showToast('Completa los campos obligatorios.', 'error');
+      return;
+    }
+    if (new Date(encFechaCierre) <= new Date()) {
+      showToast('La fecha de cierre debe ser en el futuro.', 'error');
+      return;
+    }
+    setIsCreandoEnc(true);
+    const res = await EncuestaService.crearEncuesta(propiedad.codigo_edificio!, encPregunta, encOpciones, encFechaCierre, encArchivo);
+    setIsCreandoEnc(false);
+    if (res.exito) {
+      setShowCrearEncuestaModal(false);
+      setEncPregunta('');
+      setEncOpciones(['Sí', 'No', 'Abstención']);
+      setEncFechaCierre('');
+      setEncArchivo(null);
+      setEncArchivoPreview(null);
+      cargarVotacionesReales();
+      showToast('¡Encuesta publicada exitosamente!', 'success');
+      // Notificar a todos los usuarios
+      await NotificacionService.crear({
+        codigo_edificio: propiedad.codigo_edificio!,
+        tipo: 'encuesta',
+        titulo: 'Nueva Votación',
+        mensaje: encPregunta,
+        destinatario: 'usuarios',
+      });
+    } else {
+      showToast('Error: ' + res.mensaje, 'error');
+    }
+  };
+
   // Estado para guardar los comunicados de la base de datos
   const [comunicadosLista, setComunicadosLista] = useState<any[]>([]);
 
@@ -158,6 +332,10 @@ const handleGuardarEvento = async (e: FormEvent) => {
     if (response.exito) {
       setComunicadosLista(response.data);
     }
+    const evtRes = await ComunidadService.getEventos(propiedad.codigo_edificio);
+    if (evtRes && "exito" in evtRes && evtRes.exito) {
+      setEventos(evtRes.data);
+    }
   };
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -167,7 +345,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
       case 'pendiente': return 'bg-red-500/20 text-red-400';
       case 'en_proceso': return 'bg-yellow-500/20 text-yellow-400';
       case 'cerrado': return 'bg-green-500/20 text-green-400';
-      default: return 'bg-gray-500/20 text-gray-400';
+      default: return 'bg-slate-500/20 text-slate-500';
     }
   };
   const getEstadoTexto = (estado: string) => {
@@ -365,37 +543,22 @@ const handleGuardarEvento = async (e: FormEvent) => {
           : t
       ));
       showToast('Estado del ticket actualizado con éxito.', 'success');
-      
-      const propInfo = selectedTicket.propietarios as any;
-      if (propInfo?.correo) {
-        try {
-          const estadoLegible = 
-            estadoAEviar === 'en_proceso' ? 'En Proceso' :
-            estadoAEviar === 'cerrado' ? 'Resuelto/Cerrado' :
-            estadoAEviar === 'rechazado' ? 'Rechazado' : 'Abierto';
 
-          await fetch("https://formsubmit.co/ajax/" + propInfo.correo, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json"
-            },
-            body: JSON.stringify({
-              _subject: `Actualización de su Ticket #${selectedTicket.id_ticket} - Kuota Mantenimiento`,
-              _template: "table",
-              "Asunto del Ticket": selectedTicket.titulo,
-              "Nuevo Estado": estadoLegible,
-              "Respuesta Administración": ticketNotaAdmin || "No se ha proporcionado nota adicional."
-            })
-          });
-          showToast('Notificación enviada al residente por correo.', 'success');
-        } catch (error) {
-          console.error("Error al enviar notificación de ticket:", error);
-          showToast('No se pudo enviar la notificación por correo al residente.', 'error');
-        }
-      } else {
-        showToast('El residente no tiene correo registrado para notificar.', 'error');
-      }
+      // Notificar al residente
+      const estadoLegible = 
+        estadoAEviar === 'en_proceso' ? 'En Proceso' :
+        estadoAEviar === 'cerrado' ? 'Resuelto/Cerrado' :
+        estadoAEviar === 'rechazado' ? 'Rechazado' : 'Abierto';
+
+      await NotificacionService.crear({
+        codigo_edificio: propiedad.codigo_edificio,
+        tipo: 'ticket',
+        titulo: 'Actualización de Ticket',
+        mensaje: `Tu ticket #${selectedTicket.id_ticket} pasó a estado: ${estadoLegible}.`,
+        destinatario: (selectedTicket.propietarios as any)?.apartamento || '',
+      });
+      
+      showToast('Se notificó al residente (en la app y por correo).', 'success');
 
       setTicketEvidenciaArchivo(null);
       setSelectedTicket(null); 
@@ -403,6 +566,20 @@ const handleGuardarEvento = async (e: FormEvent) => {
       showToast('Error al actualizar ticket: ' + result.mensaje, 'error');
     }
   };
+
+  const comunicadosFiltrados = comunicadosLista.filter((c) => {
+    const coincideBusqueda = c.titulo.toLowerCase().includes(comSearchTerm.toLowerCase()) || 
+                             c.cuerpo.toLowerCase().includes(comSearchTerm.toLowerCase());
+    const coincideFiltro = comFilterTag === 'Todos' || c.categoria === comFilterTag;
+    let coincideFecha = true;
+    if (comDateFrom || comDateTo) {
+      const d = new Date(c.creado_en);
+      const fechaStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (comDateFrom) coincideFecha = coincideFecha && fechaStr >= comDateFrom;
+      if (comDateTo)   coincideFecha = coincideFecha && fechaStr <= comDateTo;
+    }
+    return coincideBusqueda && coincideFiltro && coincideFecha;
+  });
 
   return (
     <div className="space-y-6">
@@ -412,7 +589,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
         {toasts.map(t => (
           <div
             key={t.id}
-            className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl text-white text-sm font-semibold backdrop-blur-md border transition-all animate-in slide-in-from-top-4 fade-in duration-300 ${
+            className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-lg text-white text-sm font-semibold backdrop-blur-md border transition-all animate-in slide-in-from-top-4 fade-in duration-300 ${
               t.type === 'success'
                 ? 'bg-green-600/95 border-green-400/40'
                 : 'bg-red-600/95 border-red-400/40'
@@ -426,9 +603,9 @@ const handleGuardarEvento = async (e: FormEvent) => {
 
       {/* ── CONFIRM MODAL ──────────────────────────────────────────────────── */}
       {confirm.open && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center px-6">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center px-6">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeConfirm} />
-          <div className="relative bg-[#0f172a] border border-white/20 rounded-3xl p-7 w-full max-w-sm shadow-2xl animate-in zoom-in-95 fade-in duration-200">
+          <div className="relative bg-kbg border border-slate-700 rounded-3xl p-7 w-full max-w-sm shadow-lg animate-in zoom-in-95 fade-in duration-200">
             <div className="flex items-center gap-3 mb-3">
               <div className="bg-yellow-500/20 p-2.5 rounded-xl border border-yellow-500/30">
                 <AlertTriangle className="w-5 h-5 text-yellow-400" />
@@ -439,13 +616,13 @@ const handleGuardarEvento = async (e: FormEvent) => {
             <div className="flex gap-3">
               <button
                 onClick={closeConfirm}
-                className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-sm transition-colors border border-white/10"
+                className="flex-1 py-2.5 rounded-xl bg-kcard/10 hover:bg-kcard/20 text-slate-900 font-semibold text-sm transition-colors border border-slate-800"
               >
                 Cancelar
               </button>
               <button
                 onClick={() => { closeConfirm(); confirm.onConfirm(); }}
-                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors"
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-900 hover:bg-white font-semibold text-sm transition-colors"
               >
                 Confirmar
               </button>
@@ -458,12 +635,12 @@ const handleGuardarEvento = async (e: FormEvent) => {
       {previewDoc && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 py-8">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setPreviewDoc(null)} />
-          <div className="relative bg-[#0f172a] rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-white/20 overflow-hidden shadow-2xl animate-in zoom-in-95 fade-in duration-200">
+          <div className="relative bg-kbg rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-slate-700 overflow-hidden shadow-lg animate-in zoom-in-95 fade-in duration-200">
             <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-5 py-4 flex items-center justify-between shrink-0">
-              <h3 className="text-white font-semibold flex items-center gap-2 truncate">
+              <h3 className="text-slate-100 font-semibold flex items-center gap-2 truncate">
                 <FileText className="w-5 h-5 shrink-0" /> {previewDoc.titulo}
               </h3>
-              <button onClick={() => setPreviewDoc(null)} className="ml-4 p-1.5 rounded-full hover:bg-white/20 transition-colors shrink-0">
+              <button onClick={() => setPreviewDoc(null)} className="ml-4 p-1.5 rounded-full hover:bg-kcard/20 transition-colors shrink-0">
                 <X className="w-5 h-5 text-white" />
               </button>
             </div>
@@ -480,7 +657,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                   <img
                     src={previewDoc.url_archivo}
                     alt={previewDoc.titulo}
-                    className="max-w-full max-h-[65vh] object-contain rounded-xl shadow-2xl"
+                    className="max-w-full max-h-[65vh] object-contain rounded-xl shadow-lg"
                   />
                 </div>
               )}
@@ -489,10 +666,48 @@ const handleGuardarEvento = async (e: FormEvent) => {
         </div>
       )}
 
+      {/* ── DETAIL MODAL FOR COMUNICADO ────────────────────────────────────── */}
+      {selectedComunicado && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedComunicado(null)} />
+          <div className="relative bg-kbg rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col border border-slate-700 overflow-hidden shadow-lg animate-in zoom-in-95 fade-in duration-200">
+            <div className={`px-6 py-4 flex items-center justify-between shrink-0 ${
+              selectedComunicado.categoria === 'Urgente' ? 'bg-gradient-to-r from-red-700 to-red-800' :
+              selectedComunicado.categoria === 'Mantenimiento' ? 'bg-gradient-to-r from-orange-700 to-orange-800' :
+              'bg-gradient-to-r from-blue-700 to-blue-800'
+            }`}>
+              <h3 className="text-slate-100 font-semibold flex items-center gap-2 text-lg">
+                <Megaphone className="w-5 h-5 shrink-0" /> {selectedComunicado.categoria}
+              </h3>
+              <button onClick={() => setSelectedComunicado(null)} className="ml-4 p-1.5 rounded-full hover:bg-kcard/20 transition-colors shrink-0">
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
+              <div>
+                <h3 className="text-xl font-bold text-white mb-1">{selectedComunicado.titulo}</h3>
+                <div className="flex items-center gap-1.5 text-white/50 text-xs">
+                  <Calendar className="w-3.5 h-3.5" />
+                  {new Date(selectedComunicado.creado_en).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}
+                </div>
+              </div>
+              <div className="bg-black/20 border border-slate-800 rounded-xl p-4 text-white/90 text-sm whitespace-pre-wrap leading-relaxed">
+                {selectedComunicado.cuerpo}
+              </div>
+              {selectedComunicado.imagen_url && (
+                <div className="rounded-xl overflow-hidden border border-slate-800 bg-black/40">
+                  <img src={selectedComunicado.imagen_url} alt={selectedComunicado.titulo} className="w-full h-auto object-contain max-h-80" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── SUB-PESTAÑAS ───────────────────────────────────────────────────── */}
-      <div className="flex gap-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-2 overflow-x-auto">
+      <div className="flex gap-2 bg-kcard/10 backdrop-blur-md border border-slate-700 rounded-2xl p-2 overflow-x-auto">
         {([
-          { key: 'comunicados', label: 'Comunicados', Icon: MessageSquare },
+          { key: 'comunicados', label: 'Comunicados / Eventos', Icon: MessageSquare },
           { key: 'votaciones',  label: 'Votaciones',  Icon: Vote },
           { key: 'tickets',     label: 'Tickets',     Icon: Wrench },
           { key: 'configuraciones', label: 'Configuración', Icon: Settings },
@@ -501,7 +716,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
             key={key}
             onClick={() => setSubTab(key as any)}
             className={`flex-1 min-w-[110px] py-3 px-2 rounded-xl font-semibold transition-all ${
-              subTab === key ? 'bg-white text-blue-600' : 'text-white hover:bg-white/10'
+              subTab === key ? 'bg-kcard text-white' : 'text-white hover:bg-kcard/10'
             }`}
           >
             <Icon className="w-5 h-5 mx-auto mb-1" />
@@ -518,72 +733,278 @@ const handleGuardarEvento = async (e: FormEvent) => {
 
       {/* ── COMUNICADOS ────────────────────────────────────────────────────── */}
       {subTab === 'comunicados' && (
-        <section className="animate-in fade-in">
+        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <h2 className="text-xl font-semibold flex items-center gap-2 text-white">
-              <MessageSquare className="w-5 h-5 text-blue-400" /> Archivo de Comunicados
+              <MessageSquare className="w-5 h-5 text-slate-400" /> Archivo de Comunicados
             </h2>
-            
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 border border-blue-400/20 sm:ml-auto w-full sm:w-auto justify-center"
-            >
-              <Plus className="w-4 h-4" />
-              Nuevo Comunicado
-            </button>
-            <button
-                onClick={() => setIsEventModalOpen(true)}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 flex items-center gap-2 transition-all active:scale-95"
-              >
-                <Calendar className="w-4 h-4" />
-                Agendar Evento
-              </button>
+
+            <div className="flex gap-3 w-full sm:w-auto">
+                  <button onClick={() => setIsModalOpen(true)} className="bg-slate-100 text-slate-900 hover:bg-white px-5 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 whitespace-nowrap">
+                    <Plus className="w-5 h-5" /> Nuevo Comunicado
+                  </button>
+                  <button onClick={() => {
+                      setIsEditingEvent(false);
+                      setEditingEventId(null);
+                      setNewEvent({ titulo: '', descripcion: '', fecha: '', fecha_fin: '', hora_inicio: '', hora_fin: '', tipo: 'Asamblea', notificar_ahora: false });
+                      setIsEventModalOpen(true);
+                    }}
+                    className="bg-green-500 hover:bg-green-400 text-white px-5 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 whitespace-nowrap shadow-lg shadow-green-500/20"
+                  >
+                    <Calendar className="w-5 h-5" /> Agendar Evento
+                  </button>
+                </div>
           </div>
           </h2>
+
+          {/* FILTROS */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+            {/* Búsqueda por texto */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
+              <input
+                type="text"
+                placeholder="Buscar por título o contenido..."
+                value={comSearchTerm}
+                onChange={(e) => setComSearchTerm(e.target.value)}
+                className="w-full bg-kcard/10 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+            </div>
+            {/* Categoría */}
+            <div className="relative">
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50 z-10" />
+              <select
+                value={comFilterTag}
+                onChange={(e) => setComFilterTag(e.target.value as any)}
+                className="w-full bg-kcard/10 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-white text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              >
+                <option value="Todos" className="bg-kbg">Todas las categorías</option>
+                <option value="Informativo" className="bg-kbg">Informativo</option>
+                <option value="Mantenimiento" className="bg-kbg">Mantenimiento</option>
+                <option value="Urgente" className="bg-kbg">Urgente</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50 pointer-events-none z-10" />
+            </div>
+            {/* Fecha desde */}
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50 pointer-events-none" />
+              <input
+                type="date"
+                value={comDateFrom}
+                onChange={(e) => setComDateFrom(e.target.value)}
+                className="w-full bg-kcard/10 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 [color-scheme:dark]"
+              />
+            </div>
+            {/* Fecha hasta */}
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50 pointer-events-none" />
+              <input
+                type="date"
+                value={comDateTo}
+                onChange={(e) => setComDateTo(e.target.value)}
+                className="w-full bg-kcard/10 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 [color-scheme:dark]"
+              />
+            </div>
+          </div>
+
+          {/* Botón reiniciar filtros */}
+          {(comSearchTerm || comFilterTag !== 'Todos' || comDateFrom || comDateTo) && (
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={() => { setComSearchTerm(''); setComFilterTag('Todos'); setComDateFrom(''); setComDateTo(''); }}
+                className="flex items-center gap-1.5 text-white/60 hover:text-white text-xs font-medium transition-colors border border-slate-700 hover:border-white/40 px-3 py-1.5 rounded-lg"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Reiniciar filtros
+              </button>
+            </div>
+          )}
+
           <div className="space-y-3">
-            {comunicadosLista.length === 0 ? (
+            {comunicadosFiltrados.length === 0 ? (
               <p className="text-center text-white/50 py-8 bg-black/20 rounded-2xl border border-white/5">
-                No hay comunicados publicados en este edificio.
+                No se encontraron comunicados con esos filtros.
               </p>
             ) : (
-              comunicadosLista.map((c) => (
-                <div key={c.id} className="bg-white/10 border border-white/20 rounded-2xl p-5 relative overflow-hidden">
+              comunicadosFiltrados.slice(0, comunicadoLimit).map((c) => (
+                <div
+                  key={c.id}
+                  className="bg-kcard/10 border border-slate-700 rounded-2xl p-4 relative overflow-hidden hover:bg-kcard/20 cursor-pointer transition-all"
+                  onClick={() => setSelectedComunicado(c)}
+                >
                   {/* Etiqueta de Categoría */}
                   <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl font-bold text-xs ${
-                    c.categoria === 'Urgente' ? 'bg-red-500 text-white' : 
-                    c.categoria === 'Mantenimiento' ? 'bg-orange-500 text-white' : 
-                    'bg-blue-500 text-white'
+                    c.categoria === 'Urgente' ? 'bg-red-500 text-white' :
+                    c.categoria === 'Mantenimiento' ? 'bg-orange-500 text-white' :
+                    'bg-slate-600 text-white'
                   }`}>
                     {c.categoria}
                   </div>
 
-                  <div className="flex justify-between items-start mb-3 mt-2">
+                  <div className="flex justify-between items-start mb-2 mt-1">
                     <div className="flex-1 pr-4">
-                      <h3 className="font-bold text-lg mb-1 text-white">{c.titulo}</h3>
-                      <p className="text-sm text-blue-200">
+                      <h3 className="font-bold text-base mb-0.5 text-white leading-tight">{c.titulo}</h3>
+                      <p className="text-xs text-slate-400">
                         Publicado el {new Date(c.creado_en).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
-                  
+
                   {/* Cuerpo del mensaje */}
-                  <p className="text-white/80 text-sm mb-4 whitespace-pre-wrap">{c.cuerpo}</p>
+                  <p className="text-white/80 text-sm mb-3 whitespace-pre-wrap line-clamp-2">{c.cuerpo}</p>
 
                   {/* Si tiene imagen adjunta, mostramos un indicador */}
                   {c.imagen_url && (
-                    <div className="mb-4 inline-flex items-center gap-2 bg-blue-500/20 text-blue-300 px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-500/30">
-                      <ImageIcon className="w-4 h-4" /> Contiene imagen adjunta
+                    <div className="mb-3 inline-flex items-center gap-2 bg-slate-500/20 text-slate-400 px-3 py-1.5 rounded-lg text-[10px] font-semibold border border-blue-500/30">
+                      <ImageIcon className="w-3 h-3" /> Contiene imagen adjunta
                     </div>
                   )}
 
                   <div className="flex gap-2">
-                    <button className="flex-1 bg-red-500/20 hover:bg-red-500/40 text-red-300 py-2 rounded-xl font-semibold flex justify-center items-center gap-2 transition-colors border border-red-500/20 text-sm">
-                      <Trash2 className="w-4 h-4"/> Eliminar
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleEliminarComunicado(c.id, c.titulo, c.imagen_url); }}
+                      className="flex-1 bg-red-500/20 hover:bg-red-500/40 text-red-300 py-1.5 rounded-xl font-semibold flex justify-center items-center gap-2 transition-colors border border-red-500/20 text-xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5"/> Eliminar
                     </button>
                   </div>
                 </div>
               ))
+            )}
+
+            {/* Mostrar más / menos */}
+            {comunicadosFiltrados.length > 3 && (
+              <div className="flex justify-center pt-3 pb-5">
+                {comunicadoLimit < comunicadosFiltrados.length ? (
+                  <button
+                    onClick={() => setComunicadoLimit(prev => prev + 3)}
+                    className="flex items-center gap-2 text-slate-400 hover:text-slate-400 text-sm font-medium transition-colors"
+                  >
+                    <ChevronDown className="w-4 h-4" /> Ver más comunicados
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setComunicadoLimit(3)}
+                    className="flex items-center gap-2 text-slate-400 hover:text-slate-400 text-sm font-medium transition-colors"
+                  >
+                    <ChevronUp className="w-4 h-4" /> Ver menos
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ─── CALENDARIO DE EVENTOS ─── */}
+          <div className="bg-kcard/5 border border-slate-800 rounded-3xl p-6 backdrop-blur-md mb-8 mt-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-slate-400" /> Agenda del Edificio
+              </h3>
+              <div className="flex items-center gap-4 text-white/80 bg-kcard/5 px-4 py-2 rounded-xl border border-white/5">
+                <button onClick={() => setFechaActual(new Date(fechaActual.setMonth(fechaActual.getMonth() - 1)))} className="hover:text-slate-400">
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className="text-sm font-bold min-w-[120px] text-center capitalize">
+                  {fechaActual.toLocaleString('es-ES', { month: 'long', year: 'numeric' })}
+                </span>
+                <button onClick={() => setFechaActual(new Date(fechaActual.setMonth(fechaActual.getMonth() + 1)))} className="hover:text-slate-400">
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Grilla del Calendario */}
+            <div className="grid grid-cols-7 gap-2 mb-4">
+              {['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'].map(d => (
+                <div key={d} className="text-center text-[10px] uppercase tracking-widest text-white/30 font-bold py-2">{d}</div>
+              ))}
+
+              {Array.from({ length: new Date(fechaActual.getFullYear(), fechaActual.getMonth() + 1, 0).getDate() }).map((_, i) => {
+                const dia = i + 1;
+                const fechaIterada = new Date(fechaActual.getFullYear(), fechaActual.getMonth(), dia);
+                const esPasado = fechaIterada.getTime() < new Date().setHours(0,0,0,0);
+
+                const eventosDelDia = eventos.filter(e => {
+                  const f = new Date(e.fecha);
+                  return f.getUTCDate() === dia && f.getUTCMonth() === fechaActual.getMonth() && f.getUTCFullYear() === fechaActual.getFullYear();
+                });
+
+                return (
+                  <button
+                    key={i}
+                    onClick={() => eventosDelDia.length > 0 && setEventoSeleccionado(eventosDelDia[0])}
+                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all relative ${
+                      esPasado ? 'opacity-20' : 'hover:bg-kcard/10 active:scale-90'
+                    } ${eventosDelDia.length > 0 ? 'bg-kcard/10 border border-slate-700 shadow-lg shadow-black/20' : 'bg-kcard/[0.02]'}`}
+                  >
+                    <span className={`text-sm font-semibold ${eventosDelDia.length > 0 ? 'text-slate-400' : 'text-white/60'}`}>{dia}</span>
+                    <div className="flex gap-0.5">
+                      {eventosDelDia.slice(0, 3).map((e, idx) => (
+                        <div key={idx} className={`w-1.5 h-1.5 rounded-full ${
+                          e.tipo === 'Asamblea' ? 'bg-red-500' :
+                          e.tipo === 'Mantenimiento' ? 'bg-yellow-500' : 'bg-emerald-500'
+                        }`} />
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Tarjeta de Detalle Dinámica */}
+            {eventoSeleccionado && (
+              <div className="mt-6 p-5 bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-slate-800 rounded-2xl animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase tracking-tighter px-2 py-0.5 rounded-md ${
+                        eventoSeleccionado.tipo === 'Asamblea' ? 'bg-red-500 text-white' :
+                        eventoSeleccionado.tipo === 'Mantenimiento' ? 'bg-yellow-500 text-black' : 'bg-emerald-500 text-white'
+                      }`}>
+                        {eventoSeleccionado.tipo}
+                      </span>
+                      <span className="text-white/40 text-[10px] font-bold">EVENTO CONFIRMADO</span>
+                    </div>
+                    <h4 className="text-white text-lg font-bold leading-tight">{eventoSeleccionado.titulo}</h4>
+                    <div className="flex flex-wrap gap-4 text-white/60 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                        {eventoSeleccionado.hora_inicio.slice(0,5)} - {eventoSeleccionado.hora_fin.slice(0,5)}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                        {new Date(eventoSeleccionado.fecha).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                      </div>
+                    </div>
+                    {eventoSeleccionado.descripcion && (
+                      <p className="text-white/80 text-sm bg-black/20 p-3 rounded-xl border border-white/5">{eventoSeleccionado.descripcion}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditarEvento(eventoSeleccionado)}
+                      className="bg-yellow-500/20 hover:bg-yellow-500/40 text-yellow-300 p-2.5 rounded-xl transition-colors border border-yellow-500/20 flex flex-col items-center justify-center aspect-square"
+                      title="Reprogramar o Modificar Evento"
+                    >
+                      <Edit className="w-4 h-4"/>
+                    </button>
+                    <button
+                      onClick={() => handleEliminarEvento(eventoSeleccionado)}
+                      className="bg-red-500/20 hover:bg-red-500/40 text-red-300 p-2.5 rounded-xl transition-colors border border-red-500/20 flex flex-col items-center justify-center aspect-square"
+                      title="Eliminar Evento"
+                    >
+                      <Trash2 className="w-4 h-4"/>
+                    </button>
+                    <button
+                      onClick={() => setEventoSeleccionado(null)}
+                      title="Cerrar detalle"
+                      className="bg-kcard/5 hover:bg-kcard/10 p-2.5 rounded-xl transition-colors border border-slate-800 flex flex-col items-center justify-center aspect-square"
+                    >
+                      <X className="w-4 h-4 text-white/40" />
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </section>
@@ -591,95 +1012,263 @@ const handleGuardarEvento = async (e: FormEvent) => {
 
       {/* ── VOTACIONES ─────────────────────────────────────────────────────── */}
       {subTab === 'votaciones' && (
-        <section className="animate-in fade-in">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">Resultados de Votaciones</h2>
-            {onNavigateToVotaciones && (
-              <button 
-                onClick={onNavigateToVotaciones}
-                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-500/20 transition-colors"
-              >
-                Gestionar / Nueva
-              </button>
-            )}
+        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <h2 className="text-xl font-semibold flex items-center gap-2 text-white">
+              <Vote className="w-5 h-5 text-purple-400" /> Resultados de Votaciones
+            </h2>
+            <button
+              onClick={() => setShowCrearEncuestaModal(true)}
+              className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-500/20 transition-all flex items-center gap-2 border border-purple-400/20"
+            >
+              <Plus className="w-4 h-4" /> Crear Encuesta
+            </button>
           </div>
-          
-          <div className="space-y-4">
-            {votacionesReales.length === 0 ? (
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center text-white/50">
-                No hay encuestas registradas en este edificio.
-              </div>
-            ) : votacionesReales.map(enc => {
-              const totalVotos = enc.votos?.length || 0;
-              
-              return (
-                <div key={enc.id} className="bg-white/10 border border-white/20 rounded-2xl p-5">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="font-bold text-lg text-white">{enc.pregunta}</h3>
-                      <span className="text-white/50 text-sm">Cierre: {new Date(enc.fecha_cierre).toLocaleString()}</span>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${enc.activa ? 'bg-green-500' : 'bg-gray-500'} text-white`}>
-                      {enc.activa ? 'Activa' : 'Cerrada'}
-                    </span>
-                  </div>
-                  <div className="space-y-3 mb-4">
-                    {enc.opciones.map((op: string, idx: number) => {
-                      // Colores estéticos por opción (similar al original que tenía verde/rojo)
-                      const isYes = op.toLowerCase() === 'sí' || op.toLowerCase() === 'si' || idx === 0;
-                      const isNo = op.toLowerCase() === 'no' || idx === 1;
-                      const color = isYes ? 'bg-green-400' : (isNo ? 'bg-red-400' : 'bg-yellow-400');
-                      const textColor = isYes ? 'text-green-400' : (isNo ? 'text-red-400' : 'text-yellow-400');
 
-                      const votosOpcion = enc.votos?.filter((v: any) => v.opcion_seleccionada === op).length || 0;
-                      const porcentaje = totalVotos === 0 ? 0 : Math.round((votosOpcion / totalVotos) * 100);
-                      
-                      return (
-                        <div key={op}>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className={`font-medium ${textColor}`}>{op}</span>
-                            <span className="text-white/80">{votosOpcion} votos <span className="opacity-50">({porcentaje}%)</span></span>
-                          </div>
-                          <div className="w-full bg-white/20 rounded-full h-3">
-                            <div className={`${color} h-full rounded-full transition-all duration-1000`} style={{ width: `${porcentaje}%` }}></div>
-                          </div>
-                        </div>
-                      );
-                    })}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+             <div onClick={() => setVotacionesFilter('todas')} className={`cursor-pointer border rounded-2xl p-3 text-center transition-all ${votacionesFilter === 'todas' ? 'bg-slate-600/30 border-blue-500' : 'bg-kcard/5 hover:bg-kcard/10 border-slate-800'}`}>
+                <div className="text-2xl font-bold text-white">{votacionesReales.length}</div>
+                <div className="text-[10px] text-white/70 font-medium uppercase tracking-wider mt-1">Todas</div>
+             </div>
+             <div onClick={() => setVotacionesFilter('activas')} className={`cursor-pointer border rounded-2xl p-3 text-center transition-all ${votacionesFilter === 'activas' ? 'bg-green-500/40 border-green-500' : 'bg-green-500/10 border-green-500/20 hover:bg-green-500/30'}`}>
+               <div className="text-2xl font-bold text-green-400">{votacionesReales.filter(v => v.activa).length}</div>
+               <div className="text-[10px] text-green-300 font-medium uppercase tracking-wider mt-1">Activas</div>
+             </div>
+             <div onClick={() => setVotacionesFilter('cerradas')} className={`cursor-pointer border rounded-2xl p-3 text-center transition-all ${votacionesFilter === 'cerradas' ? 'bg-slate-500/40 border-gray-500' : 'bg-slate-500/10 border-gray-500/20 hover:bg-slate-500/30'}`}>
+               <div className="text-2xl font-bold text-slate-500">{votacionesReales.filter(v => !v.activa).length}</div>
+               <div className="text-[10px] text-gray-300 font-medium uppercase tracking-wider mt-1">Cerradas</div>
+             </div>
+          </div>
+
+          <div className="space-y-4">
+            {(() => {
+              const filteredVotaciones = votacionesFilter === 'todas' ? votacionesReales : votacionesReales.filter(v => votacionesFilter === 'activas' ? v.activa : !v.activa);
+
+              if (filteredVotaciones.length === 0) {
+                return (
+                 <div className="bg-kcard/5 border border-slate-800 rounded-2xl p-10 text-center text-white/50">
+                   <Vote className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                   <p>No hay encuestas en esta categoría.</p>
+                 </div>
+                );
+              }
+
+              return filteredVotaciones.map(enc => (
+                <div key={enc.id} className="bg-kcard/10 border border-slate-700 rounded-2xl p-5 hover:bg-kcard/15 transition-colors group">
+                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+                    <div className="flex-1">
+                      <h3 className="font-bold text-lg text-white mb-1">{enc.pregunta}</h3>
+                      <p className="text-sm text-slate-400">
+                        Total votos: {enc.votos?.length || 0} • Cierre: {new Date(enc.fecha_cierre).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4 self-end md:self-auto">
+                      <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${enc.activa ? 'bg-green-500/20 text-green-400' : 'bg-slate-500/20 text-slate-500'}`}>
+                        {enc.activa ? 'Activa' : 'Cerrada'}
+                      </span>
+                      <button
+                        onClick={() => setSelectedVotacion(enc)}
+                        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center gap-2"
+                      >
+                        Ver Detalles
+                      </button>
+                    </div>
                   </div>
-                  {enc.activa && (
-                    <button 
-                      onClick={() => {
-                        askConfirm(
-                          'Cerrar Votación',
-                          '¿Seguro que deseas cerrar la votación anticipadamente?',
-                          async () => {
-                            await EncuestaService.cerrarEncuesta(enc.id);
-                            cargarVotacionesReales();
-                          }
-                        );
-                      }}
-                      className="w-full bg-blue-500 hover:bg-blue-600 transition-colors text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 mt-4"
-                    >
-                      <CheckCircle className="w-5 h-5"/> Cerrar Votación
-                    </button>
-                  )}
                 </div>
-              );
-            })}
+              ));
+            })()}
           </div>
         </section>
       )}
 
+      {/* ── MODAL DE CREAR ENCUESTA (desde Comunidad) ──────────────────────── */}
+      {showCrearEncuestaModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-8">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCrearEncuestaModal(false)} />
+          <div className="relative bg-gray-900 border border-slate-800 rounded-3xl w-full max-w-2xl shadow-lg flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 fade-in duration-200">
+            <div className="bg-gradient-to-r from-purple-800 to-purple-900 px-6 py-4 flex items-center justify-between shrink-0">
+              <h3 className="text-white text-lg font-bold flex items-center gap-2">
+                <Vote className="w-5 h-5" /> Crear Nueva Encuesta
+              </h3>
+              <button onClick={() => setShowCrearEncuestaModal(false)} className="p-1 rounded-full hover:bg-kcard/20 transition-colors">
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 space-y-5">
+              <div>
+                <Label className="text-white/80">Pregunta o Tema a Votar *</Label>
+                <Input
+                  value={encPregunta}
+                  onChange={e => setEncPregunta(e.target.value)}
+                  placeholder="Ej. ¿Aprobar el presupuesto de pintura?"
+                  className="bg-kcard/5 border-slate-800 text-white mt-1"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <Label className="text-white/80">Opciones de Respuesta</Label>
+                  <div className="space-y-2 mt-1">
+                    {encOpciones.map((op, idx) => (
+                      <Input
+                        key={idx}
+                        value={op}
+                        onChange={e => {
+                          const nuevas = [...encOpciones];
+                          nuevas[idx] = e.target.value;
+                          setEncOpciones(nuevas);
+                        }}
+                        className="bg-kcard/5 border-slate-800 text-white"
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-white/80">Fecha límite de cierre *</Label>
+                  <Input
+                    type="datetime-local"
+                    value={encFechaCierre}
+                    onChange={e => setEncFechaCierre(e.target.value)}
+                    className="bg-kcard/5 border-slate-800 text-white mt-1"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-white/80 block mb-2">Documento Soporte (Opcional)</Label>
+                {!encArchivo ? (
+                  <div className="flex justify-center px-6 pt-5 pb-6 border-2 border-slate-700 border-dashed rounded-xl bg-kcard/5 hover:bg-kcard/10 transition-colors">
+                    <div className="space-y-1 text-center">
+                      <Upload className="mx-auto h-8 w-8 text-white/50 mb-3" />
+                      <Label htmlFor="enc-com-file" className="cursor-pointer text-purple-400 hover:text-purple-300 text-sm font-medium">
+                        <span>Añadir archivo</span>
+                        <input id="enc-com-file" type="file" className="sr-only" onChange={handleEncArchivoChange} accept=".pdf,image/*" />
+                      </Label>
+                      <p className="text-xs text-white/40 mt-1">PDF o Imágenes</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative w-full h-24 border border-slate-700 rounded-xl overflow-hidden bg-black/40 flex items-center justify-center group">
+                    {encArchivoPreview === 'pdf' ? (
+                      <div className="flex flex-col items-center text-white">
+                        <FileText className="w-8 h-8 text-red-400 mb-1" />
+                        <span className="text-sm">{encArchivo.name}</span>
+                      </div>
+                    ) : (
+                      <img src={encArchivoPreview!} alt="Preview" className="w-full h-full object-contain" />
+                    )}
+                    <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <button onClick={() => { setEncArchivo(null); setEncArchivoPreview(null); }} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-sm">Eliminar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="border-t border-slate-800 p-4 flex gap-3 shrink-0">
+              <button onClick={() => setShowCrearEncuestaModal(false)} className="flex-1 bg-kcard/5 hover:bg-kcard/10 text-white py-3 rounded-xl font-medium border border-slate-800 transition-colors">
+                Cancelar
+              </button>
+              <button onClick={handleCrearEncuesta} disabled={isCreandoEnc} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50 text-white py-3 rounded-xl font-bold transition-colors">
+                {isCreandoEnc ? 'Publicando...' : 'Publicar Encuesta'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL DE DETALLE DE VOTACIÓN ───────────────────────────────────── */}
+      {selectedVotacion && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-8">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedVotacion(null)} />
+          <div className="relative bg-kbg rounded-3xl w-full max-w-lg flex flex-col border border-slate-700 shadow-lg animate-in zoom-in-95 fade-in duration-200">
+            <div className="bg-gradient-to-r from-purple-900 to-purple-800 px-6 py-4 flex items-center justify-between shrink-0 rounded-t-3xl">
+              <div>
+                <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                  <Vote className="w-5 h-5 shrink-0" />
+                  Detalles de la Votación
+                </h3>
+              </div>
+              <button onClick={() => setSelectedVotacion(null)} className="p-1.5 rounded-full hover:bg-kcard/20 transition-colors shrink-0">
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 text-white max-h-[80vh] overflow-y-auto custom-scrollbar">
+              <div>
+                <h4 className="text-xl font-bold text-white mb-2">{selectedVotacion.pregunta}</h4>
+                <div className="flex gap-3 text-sm mb-4">
+                  <span className={`px-2.5 py-1 rounded-full font-semibold ${selectedVotacion.activa ? 'bg-green-500/20 text-green-400' : 'bg-slate-500/20 text-slate-500'}`}>
+                    {selectedVotacion.activa ? 'Activa' : 'Cerrada'}
+                  </span>
+                  <span className="text-white/60 flex items-center">
+                    Cierre: {new Date(selectedVotacion.fecha_cierre).toLocaleString()}
+                  </span>
+                </div>
+                {selectedVotacion.documento_url && (
+                  <div className="mt-4 mb-2 rounded-xl overflow-hidden border border-slate-700 bg-black/40">
+                    <img src={selectedVotacion.documento_url} alt="Documento adjunto" className="w-full max-h-60 object-contain" />
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-kcard/5 border border-slate-800 rounded-2xl p-5">
+                <h5 className="font-semibold text-slate-400 mb-4">Resultados ({selectedVotacion.votos?.length || 0} votos)</h5>
+                <div className="space-y-4">
+                  {selectedVotacion.opciones.map((op: string, idx: number) => {
+                    const totalVotos = selectedVotacion.votos?.length || 0;
+                    const isYes = op.toLowerCase() === 'sí' || op.toLowerCase() === 'si' || idx === 0;
+                    const isNo = op.toLowerCase() === 'no' || idx === 1;
+                    const color = isYes ? 'bg-green-400' : (isNo ? 'bg-red-400' : 'bg-yellow-400');
+                    const textColor = isYes ? 'text-green-400' : (isNo ? 'text-red-400' : 'text-yellow-400');
+
+                    const votosOpcion = selectedVotacion.votos?.filter((v: any) => v.opcion_seleccionada === op).length || 0;
+                    const porcentaje = totalVotos === 0 ? 0 : Math.round((votosOpcion / totalVotos) * 100);
+
+                    return (
+                      <div key={op}>
+                        <div className="flex justify-between text-sm mb-1.5">
+                          <span className={`font-medium ${textColor}`}>{op}</span>
+                          <span className="text-white/80 font-medium">{votosOpcion} votos <span className="opacity-50 font-normal">({porcentaje}%)</span></span>
+                        </div>
+                        <div className="w-full bg-black/40 rounded-full h-3 border border-white/5">
+                          <div className={`${color} h-full rounded-full transition-all duration-1000`} style={{ width: `${porcentaje}%` }}></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {selectedVotacion.activa && (
+                <button
+                  onClick={() => {
+                    askConfirm(
+                      'Cerrar Votación',
+                      '¿Seguro que deseas cerrar la votación anticipadamente?',
+                      async () => {
+                        await EncuestaService.cerrarEncuesta(selectedVotacion.id);
+                        cargarVotacionesReales();
+                        setSelectedVotacion(null);
+                      }
+                    );
+                  }}
+                  className="w-full bg-red-500/80 hover:bg-red-500 transition-colors text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 mt-4 shadow-lg"
+                >
+                  <CheckCircle className="w-5 h-5"/> Cerrar Votación Ahora
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── TICKETS ────────────────────────────────────────────────────────── */}
       {subTab === 'tickets' && (
-        <section className="animate-in fade-in">
+        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
             <Wrench className="w-5 h-5"/> Gestión de Mantenimiento
           </h2>
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-             <div onClick={() => setTicketFilter('todos')} className={`cursor-pointer border rounded-2xl p-3 text-center transition-all ${ticketFilter === 'todos' ? 'bg-blue-500/30 border-blue-500' : 'bg-white/5 hover:bg-white/10 border-white/10'}`}>
+             <div onClick={() => setTicketFilter('todos')} className={`cursor-pointer border rounded-2xl p-3 text-center transition-all ${ticketFilter === 'todos' ? 'bg-slate-600/30 border-blue-500' : 'bg-kcard/5 hover:bg-kcard/10 border-slate-800'}`}>
                 <div className="text-2xl font-bold text-white">{tickets.length}</div>
                 <div className="text-[10px] text-white/70 font-medium uppercase tracking-wider mt-1">Todos</div>
              </div>
@@ -695,8 +1284,8 @@ const handleGuardarEvento = async (e: FormEvent) => {
                <div className="text-2xl font-bold text-green-400">{tickets.filter(t => t.estado === 'cerrado').length}</div>
                <div className="text-[10px] text-green-300 font-medium uppercase tracking-wider mt-1">Cerrados</div>
              </div>
-             <div onClick={() => setTicketFilter('rechazado')} className={`cursor-pointer border rounded-2xl p-3 text-center transition-all ${ticketFilter === 'rechazado' ? 'bg-gray-500/40 border-gray-500' : 'bg-gray-500/10 border-gray-500/20 hover:bg-gray-500/30'}`}>
-               <div className="text-2xl font-bold text-gray-400">{tickets.filter(t => t.estado === 'rechazado').length}</div>
+             <div onClick={() => setTicketFilter('rechazado')} className={`cursor-pointer border rounded-2xl p-3 text-center transition-all ${ticketFilter === 'rechazado' ? 'bg-slate-500/40 border-gray-500' : 'bg-slate-500/10 border-gray-500/20 hover:bg-slate-500/30'}`}>
+               <div className="text-2xl font-bold text-slate-500">{tickets.filter(t => t.estado === 'rechazado').length}</div>
                <div className="text-[10px] text-gray-300 font-medium uppercase tracking-wider mt-1">Rechazados</div>
              </div>
           </div>
@@ -704,10 +1293,10 @@ const handleGuardarEvento = async (e: FormEvent) => {
           <div className="space-y-3">
             {(() => {
               const filteredTickets = ticketFilter === 'todos' ? tickets : tickets.filter(t => t.estado === ticketFilter);
-              
+
               if (filteredTickets.length === 0) {
                 return (
-                 <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center text-white/50">
+                 <div className="bg-kcard/5 border border-slate-800 rounded-2xl p-10 text-center text-white/50">
                    <Wrench className="w-12 h-12 mx-auto mb-3 opacity-50" />
                    <p>No hay tickets en esta categoría.</p>
                  </div>
@@ -715,15 +1304,15 @@ const handleGuardarEvento = async (e: FormEvent) => {
               }
 
               return filteredTickets.map(t => (
-                <div key={t.id_ticket} className="bg-white/10 border border-white/20 rounded-2xl p-5 hover:bg-white/15 transition-colors group">
+                <div key={t.id_ticket} className="bg-kcard/10 border border-slate-700 rounded-2xl p-5 hover:bg-kcard/15 transition-colors group">
                   <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
                     <div className="flex items-center gap-4">
                       {t.foto_url ? (
-                        <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-white/10">
+                        <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-slate-800">
                           <img src={t.foto_url} alt="Evidencia" className="w-full h-full object-cover" />
                         </div>
                       ) : (
-                        <div className="w-16 h-16 rounded-xl bg-white/5 shrink-0 flex items-center justify-center border border-white/10">
+                        <div className="w-16 h-16 rounded-xl bg-kcard/5 shrink-0 flex items-center justify-center border border-slate-800">
                           <Wrench className="w-6 h-6 text-white/30" />
                         </div>
                       )}
@@ -731,26 +1320,26 @@ const handleGuardarEvento = async (e: FormEvent) => {
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="font-bold text-lg leading-tight">{t.titulo} <span className="text-[10px] uppercase font-bold text-white/50 bg-black/30 px-2 py-0.5 rounded-full tracking-wider">{t.prioridad}</span></h3>
                         </div>
-                        <p className="text-sm text-blue-200">Apto {t.propietarios?.apartamento} • {t.propietarios?.nombre}</p>
+                        <p className="text-sm text-slate-400">Apto {t.propietarios?.apartamento} • {t.propietarios?.nombre}</p>
                         {t.created_at && (
-                          <p className="text-xs text-blue-200/50 mt-1">
+                          <p className="text-xs text-slate-400/50 mt-1">
                             Reportado el {new Date(t.created_at).toLocaleDateString()}
                           </p>
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-4 self-end md:self-auto">
                       <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${getEstadoColor(t.estado)}`}>
                         {getEstadoTexto(t.estado)}
                       </span>
-                      <button 
-                        onClick={() => { 
-                          setSelectedTicket(t); 
-                          setTicketNotaAdmin(t.nota_admin || ''); 
-                          setTicketEvidenciaArchivo(null); 
+                      <button
+                        onClick={() => {
+                          setSelectedTicket(t);
+                          setTicketNotaAdmin(t.nota_admin || '');
+                          setTicketEvidenciaArchivo(null);
                         }}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center gap-2"
+                        className="bg-slate-100 text-slate-900 hover:bg-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center gap-2"
                       >
                         Ver Detalles
                       </button>
@@ -767,7 +1356,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
       {selectedTicket && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-8">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => !ticketLoading && setSelectedTicket(null)} />
-          <div className="relative bg-[#0f172a] rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-white/20 shadow-2xl animate-in zoom-in-95 fade-in duration-200">
+          <div className="relative bg-kbg rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-slate-700 shadow-lg animate-in zoom-in-95 fade-in duration-200">
             <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-4 flex items-center justify-between shrink-0 rounded-t-3xl">
               <div>
                 <h3 className="text-white font-bold text-lg flex items-center gap-2">
@@ -775,25 +1364,25 @@ const handleGuardarEvento = async (e: FormEvent) => {
                   Ticket #{selectedTicket.id_ticket}
                 </h3>
               </div>
-              <button 
+              <button
                 onClick={() => {
                   if (!ticketLoading) {
                     setSelectedTicket(null);
                     setTicketEvidenciaArchivo(null);
                   }
-                }} 
-                className="p-1.5 rounded-full hover:bg-white/20 transition-colors shrink-0"
+                }}
+                className="p-1.5 rounded-full hover:bg-kcard/20 transition-colors shrink-0"
               >
                 <X className="w-5 h-5 text-white" />
               </button>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar text-white">
                {/* Metadata del Reporte */}
                <div className="flex flex-col md:flex-row gap-6">
                  {selectedTicket.foto_url && (
                     <div className="w-full md:w-1/3 shrink-0">
-                      <a href={selectedTicket.foto_url} target="_blank" rel="noreferrer" className="block w-full aspect-square rounded-2xl overflow-hidden border border-white/20 hover:opacity-90 transition-opacity">
+                      <a href={selectedTicket.foto_url} target="_blank" rel="noreferrer" className="block w-full aspect-square rounded-2xl overflow-hidden border border-slate-700 hover:opacity-90 transition-opacity">
                         <img src={selectedTicket.foto_url} alt="Evidencia" className="w-full h-full object-cover" />
                       </a>
                     </div>
@@ -801,12 +1390,12 @@ const handleGuardarEvento = async (e: FormEvent) => {
                  <div className="flex-1 space-y-4">
                     <div>
                       <h4 className="text-2xl font-bold text-white mb-1">{selectedTicket.titulo}</h4>
-                      <p className="text-blue-300 font-medium">Reportado por: Apto {selectedTicket.propietarios?.apartamento} ({selectedTicket.propietarios?.nombre})</p>
+                      <p className="text-slate-400 font-medium">Reportado por: Apto {selectedTicket.propietarios?.apartamento} ({selectedTicket.propietarios?.nombre})</p>
                       <p className="text-white/50 text-xs mt-1">Ubicación provista: {selectedTicket.ubicacion || 'No especificada'}</p>
                     </div>
-                    
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                      <p className="text-sm text-blue-100 whitespace-pre-wrap">{selectedTicket.descripcion}</p>
+
+                    <div className="bg-kcard/5 border border-slate-800 rounded-xl p-4">
+                      <p className="text-sm text-slate-400 whitespace-pre-wrap">{selectedTicket.descripcion}</p>
                     </div>
 
                     {/* HU-33: Visor de Calificación del Usuario */}
@@ -817,9 +1406,9 @@ const handleGuardarEvento = async (e: FormEvent) => {
                         </h5>
                         <div className="flex gap-1 mb-2">
                           {[1, 2, 3, 4, 5].map((star) => (
-                            <Star 
-                              key={star} 
-                              className={`w-5 h-5 ${star <= (selectedTicket.calificacion || 0) ? 'fill-yellow-400 text-yellow-400' : 'text-white/20'}`} 
+                            <Star
+                              key={star}
+                              className={`w-5 h-5 ${star <= (selectedTicket.calificacion || 0) ? 'fill-yellow-400 text-yellow-400' : 'text-white/20'}`}
                             />
                           ))}
                         </div>
@@ -831,32 +1420,32 @@ const handleGuardarEvento = async (e: FormEvent) => {
                  </div>
                </div>
 
-               <hr className="border-white/10" />
+               <hr className="border-slate-800" />
 
                {/* Acciones de Administrador */}
                <div>
-                 <h4 className="text-lg font-bold mb-3 flex items-center gap-2"><Edit className="w-4 h-4 text-blue-400"/> Gestión del Administrador</h4>
-                 
+                 <h4 className="text-lg font-bold mb-3 flex items-center gap-2"><Edit className="w-4 h-4 text-slate-400"/> Gestión del Administrador</h4>
+
                  <div className="space-y-4">
                    <div>
-                     <Label className="text-blue-200 mb-2 block">Nota o respuesta para el residente (Visible para ellos)</Label>
-                     <textarea 
+                     <Label className="text-slate-400 mb-2 block">Nota o respuesta para el residente (Visible para ellos)</Label>
+                     <textarea
                         value={ticketNotaAdmin}
                         onChange={(e) => setTicketNotaAdmin(e.target.value)}
                         placeholder="Ej: Ya se llamó al plomero, vendrá mañana al mediodía..."
-                        className="w-full h-24 bg-black/30 border border-white/20 rounded-xl p-3 text-white placeholder:text-white/30 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full h-24 bg-black/30 border border-slate-700 rounded-xl p-3 text-white placeholder:text-white/30 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                      />
                    </div>
 
                    {selectedTicket.estado === 'en_proceso' && (
-                     <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                       <Label className="text-blue-200 mb-2 block flex items-center gap-2">
+                     <div className="bg-kcard/5 border border-slate-800 rounded-xl p-4">
+                       <Label className="text-slate-400 mb-2 block flex items-center gap-2">
                          <Upload className="w-4 h-4" /> Evidencia de Resolución (Opcional - solo aplica al Cerrar)
                        </Label>
                        <p className="text-xs text-white/50 mb-3">Si vas a marcar el ticket como Resuelto, puedes adjuntar una foto del trabajo finalizado.</p>
-                       <Input 
-                         type="file" 
-                         accept="image/*" 
+                       <Input
+                         type="file"
+                         accept="image/*"
                          onChange={(e) => {
                            if (e.target.files && e.target.files[0]) {
                              setTicketEvidenciaArchivo(e.target.files[0]);
@@ -864,14 +1453,14 @@ const handleGuardarEvento = async (e: FormEvent) => {
                              setTicketEvidenciaArchivo(null);
                            }
                          }}
-                         className="bg-black/30 border-white/20 text-white file:text-white file:bg-blue-600 file:border-none file:rounded-lg file:px-4 file:py-1 hover:file:bg-blue-700 cursor-pointer"
+                         className="bg-black/30 border-slate-700 text-white file:bg-slate-800 file:text-slate-200 file:border-none file:rounded-lg file:px-4 file:py-1 hover:file:bg-slate-700 cursor-pointer"
                        />
-                       
+
                        {ticketEvidenciaArchivo && (
                          <div className="mt-4 flex justify-center bg-black/40 rounded-xl p-2 border border-blue-500/20 shadow-inner">
-                           <img 
-                             src={URL.createObjectURL(ticketEvidenciaArchivo)} 
-                             alt="Vista previa" 
+                           <img
+                             src={URL.createObjectURL(ticketEvidenciaArchivo)}
+                             alt="Vista previa"
                              className="max-h-48 object-contain rounded-lg"
                            />
                          </div>
@@ -913,16 +1502,16 @@ const handleGuardarEvento = async (e: FormEvent) => {
                          <button
                            disabled={ticketLoading}
                            onClick={() => askConfirm('Guardar Nota', '¿Estás seguro de que deseas actualizar la nota actual para el residente?', () => handleUpdateTicketStatus('mantener'))}
-                           className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 border border-transparent hover:border-white/20"
+                           className="flex-1 bg-slate-100 text-slate-900 hover:bg-white px-4 py-2.5 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 border border-transparent hover:border-slate-700"
                          >
                            <Edit className="w-4 h-4"/> Guardar Nota Actual
                          </button>
                        </>
                      )}
-                     
+
                      {/* Si ya está Cerrado o Rechazado, no proveemos botones de cambio de flujo para cumplir con HU-34 */}
                      {(selectedTicket.estado === 'cerrado' || selectedTicket.estado === 'rechazado') && (
-                        <div className="w-full text-center text-sm text-white/50 bg-white/5 p-3 rounded-xl border border-white/5">
+                        <div className="w-full text-center text-sm text-white/50 bg-kcard/5 p-3 rounded-xl border border-white/5">
                           Este ticket está finalizado y no se admiten más operaciones.
                         </div>
                      )}
@@ -936,25 +1525,25 @@ const handleGuardarEvento = async (e: FormEvent) => {
 
       {/* ── CONFIGURACIONES ────────────────────────────────────────────────── */}
       {subTab === 'configuraciones' && (
-        <section className="animate-in fade-in space-y-8">
+        <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
 
           {/* Documentos */}
-          <div className="bg-black/20 border border-white/10 p-6 rounded-3xl backdrop-blur-md">
+          <div className="bg-black/20 border border-slate-800 p-6 rounded-3xl backdrop-blur-md">
             <h2 className="text-2xl font-bold mb-1 flex items-center gap-2">
-              <FileText className="w-6 h-6 text-blue-400" /> Documentos y Normativas
+              <FileText className="w-6 h-6 text-slate-400" /> Documentos y Normativas
             </h2>
-            <p className="text-blue-100 text-sm mb-6">Sube reglamentos, estatutos o normas del condominio. Los copropietarios podrán verlos y descargarlos.</p>
+            <p className="text-slate-400 text-sm mb-6">Sube reglamentos, estatutos o normas del condominio. Los copropietarios podrán verlos y descargarlos.</p>
 
-            <form onSubmit={handleSubirDocumento} className="bg-white/5 p-4 rounded-2xl mb-6 flex flex-col md:flex-row gap-4 items-end border border-white/5">
+            <form onSubmit={handleSubirDocumento} className="bg-kcard/5 p-4 rounded-2xl mb-6 flex flex-col md:flex-row gap-4 items-end border border-white/5">
               <div className="flex-1 w-full">
-                <Label className="text-blue-200 mb-1 block">Título del Documento</Label>
-                <Input value={docTitulo} onChange={e => setDocTitulo(e.target.value)} placeholder="Ej: Normas de Convivencia" required className="bg-white/10 border-white/20" />
+                <Label className="text-slate-400 mb-1 block">Título del Documento</Label>
+                <Input value={docTitulo} onChange={e => setDocTitulo(e.target.value)} placeholder="Ej: Normas de Convivencia" required className="bg-kcard/10 border-slate-700" />
               </div>
               <div className="flex-1 w-full">
-                <Label className="text-blue-200 mb-1 block">Archivo (PDF, JPG)</Label>
-                <Input type="file" onChange={e => setDocFile(e.target.files?.[0] || null)} required accept=".pdf,image/*" className="bg-white/10 border-white/20 text-blue-100" />
+                <Label className="text-slate-400 mb-1 block">Archivo (PDF, JPG)</Label>
+                <Input type="file" onChange={e => setDocFile(e.target.files?.[0] || null)} required accept=".pdf,image/*" className="bg-kcard/10 border-slate-700 text-slate-400" />
               </div>
-              <Button disabled={isLoading} type="submit" className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 h-[40px] px-8 shrink-0">
+              <Button disabled={isLoading} type="submit" className="w-full md:w-auto bg-white text-slate-900 hover:bg-blue-700 h-[40px] px-8 shrink-0">
                 {isLoading ? 'Subiendo...' : <><Upload className="w-4 h-4 mr-2" /> Subir</>}
               </Button>
             </form>
@@ -964,9 +1553,9 @@ const handleGuardarEvento = async (e: FormEvent) => {
             ) : (
               <div className="space-y-3">
                 {documentos.map(doc => (
-                  <div key={doc.id} className="bg-white/10 p-4 rounded-2xl flex items-center gap-3 border border-white/10 hover:bg-white/[0.13] transition-colors">
-                    <div className="bg-blue-500/20 p-3 rounded-xl border border-blue-500/30 shrink-0">
-                      <FileText className="w-6 h-6 text-blue-400" />
+                  <div key={doc.id} className="bg-kcard/10 p-4 rounded-2xl flex items-center gap-3 border border-slate-800 hover:bg-kcard/[0.13] transition-colors">
+                    <div className="bg-slate-500/20 p-3 rounded-xl border border-blue-500/30 shrink-0">
+                      <FileText className="w-6 h-6 text-slate-400" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-white truncate">{doc.titulo}</h4>
@@ -984,7 +1573,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         onClick={() => setPreviewDoc(doc)}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-blue-200 text-xs font-semibold transition-colors border border-white/10"
+                        className="flex items-center gap-1.5 px-3 py-2 bg-kcard/10 hover:bg-kcard/20 rounded-xl text-slate-400 text-xs font-semibold transition-colors border border-slate-800"
                       >
                         <Eye className="w-3.5 h-3.5" /> Ver
                       </button>
@@ -1002,27 +1591,27 @@ const handleGuardarEvento = async (e: FormEvent) => {
           </div>
 
           {/* Contactos */}
-          <div className="bg-black/20 border border-white/10 p-6 rounded-3xl backdrop-blur-md">
+          <div className="bg-black/20 border border-slate-800 p-6 rounded-3xl backdrop-blur-md">
             <h2 className="text-2xl font-bold mb-1 flex items-center gap-2">
               <Phone className="w-6 h-6 text-purple-400" /> Contactos de Emergencia
             </h2>
-            <p className="text-blue-100 text-sm mb-6">Añade teléfonos útiles para los copropietarios: Policía, Vigilancia, Administración, etc.</p>
+            <p className="text-slate-400 text-sm mb-6">Añade teléfonos útiles para los copropietarios: Policía, Vigilancia, Administración, etc.</p>
 
-            <form onSubmit={handleAñadirContacto} className="bg-white/5 p-4 rounded-2xl mb-6 flex flex-col gap-4 border border-white/5">
+            <form onSubmit={handleAñadirContacto} className="bg-kcard/5 p-4 rounded-2xl mb-6 flex flex-col gap-4 border border-white/5">
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="flex-1">
-                  <Label className="text-blue-200 mb-1 block">Nombre / Cargo</Label>
-                  <Input value={contNombre} onChange={e => setContNombre(e.target.value)} placeholder="Ej: Bomberos" required className="bg-white/10 border-white/20" />
+                  <Label className="text-slate-400 mb-1 block">Nombre / Cargo</Label>
+                  <Input value={contNombre} onChange={e => setContNombre(e.target.value)} placeholder="Ej: Bomberos" required className="bg-kcard/10 border-slate-700" />
                 </div>
                 <div className="flex-1">
-                  <Label className="text-blue-200 mb-1 block">Teléfono</Label>
+                  <Label className="text-slate-400 mb-1 block">Teléfono</Label>
                   <div className="flex items-center gap-2">
                     {/* Dropdown de prefijo */}
                     <div className="relative">
                       <button
                         type="button"
                         onClick={() => setShowPrefixDropdown(!showPrefixDropdown)}
-                        className="flex items-center gap-1.5 bg-white/10 text-white border border-white/30 hover:border-white/50 rounded-lg pl-3 pr-2 py-2 focus:outline-none transition-all min-w-[90px] h-[40px]"
+                        className="flex items-center gap-1.5 bg-kcard/10 text-white border border-white/30 hover:border-white/50 rounded-lg pl-3 pr-2 py-2 focus:outline-none transition-all min-w-[90px] h-[40px]"
                       >
                         <span className="font-medium text-sm">{contPrefijo}</span>
                         <ChevronDown className={`w-4 h-4 text-white/70 ml-auto transition-transform ${showPrefixDropdown ? 'rotate-180' : ''}`} />
@@ -1030,13 +1619,13 @@ const handleGuardarEvento = async (e: FormEvent) => {
                       {showPrefixDropdown && (
                         <>
                           <div className="fixed inset-0 z-40" onClick={() => setShowPrefixDropdown(false)} />
-                          <div className="absolute top-full left-0 mt-1 w-full bg-[#0f172a]/95 backdrop-blur-xl border border-white/20 rounded-xl overflow-hidden z-50 shadow-2xl">
+                          <div className="absolute top-full left-0 mt-1 w-full bg-kbg/95 backdrop-blur-xl border border-slate-700 rounded-xl overflow-hidden z-50 shadow-lg">
                             {PREFIJOS_VE.map(p => (
                               <div
                                 key={p}
                                 onClick={() => { setContPrefijo(p); setShowPrefixDropdown(false); }}
-                                className={`px-3 py-2 text-sm cursor-pointer transition-colors text-center font-medium hover:bg-white/20 ${
-                                  contPrefijo === p ? 'bg-white/10 text-blue-300' : 'text-white'
+                                className={`px-3 py-2 text-sm cursor-pointer transition-colors text-center font-medium hover:bg-kcard/20 ${
+                                  contPrefijo === p ? 'bg-kcard/10 text-slate-400' : 'text-white'
                                 }`}
                               >
                                 {p}
@@ -1057,7 +1646,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                       placeholder="1234567"
                       maxLength={7}
                       inputMode="numeric"
-                      className="bg-white/10 border-white/20 flex-1 h-[40px]"
+                      className="bg-kcard/10 border-slate-700 flex-1 h-[40px]"
                     />
                   </div>
                   {contNumero.length > 0 && contNumero.length < 7 && (
@@ -1075,7 +1664,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {contactos.map(ct => (
-                  <div key={ct.id} className="bg-white/10 p-4 rounded-2xl flex justify-between items-center border border-white/10 hover:bg-white/[0.13] transition-colors">
+                  <div key={ct.id} className="bg-kcard/10 p-4 rounded-2xl flex justify-between items-center border border-slate-800 hover:bg-kcard/[0.13] transition-colors">
                     <div className="flex items-center gap-3">
                       <div className="bg-purple-500/20 p-2.5 rounded-xl border border-purple-500/30 shrink-0">
                         <Phone className="w-4 h-4 text-purple-400" />
@@ -1104,15 +1693,15 @@ const handleGuardarEvento = async (e: FormEvent) => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !isSubmittingCom && setIsModalOpen(false)} />
           
-          <div className="relative bg-[#0f172a] rounded-3xl w-full max-w-lg border border-white/10 overflow-hidden shadow-2xl z-10 animate-in zoom-in-95 fade-in duration-200">
+          <div className="relative bg-kbg rounded-3xl w-full max-w-lg border border-slate-800 overflow-hidden shadow-lg z-10 animate-in zoom-in-95 fade-in duration-200">
             {/* Header del modal */}
-            <div className="bg-white/5 border-b border-white/10 px-6 py-4 flex items-center justify-between">
+            <div className="bg-kcard/5 border-b border-slate-800 px-6 py-4 flex items-center justify-between">
               <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-blue-400" /> Redactar Comunicado
+                <MessageSquare className="w-5 h-5 text-slate-400" /> Redactar Comunicado
               </h3>
               <button 
                 onClick={() => !isSubmittingCom && setIsModalOpen(false)} 
-                className="p-1.5 rounded-full hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+                className="p-1.5 rounded-full hover:bg-kcard/10 transition-colors text-white/70 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1128,7 +1717,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                   value={comTitulo} 
                   onChange={(e) => setComTitulo(e.target.value)}
                   placeholder="Ej: Mantenimiento de Ascensores"
-                  className="w-full bg-black/40 border-white/10 text-white placeholder:text-white/30 h-11"
+                  className="w-full bg-black/40 border-slate-800 text-white placeholder:text-white/30 h-11"
                 />
               </div>
 
@@ -1137,11 +1726,11 @@ const handleGuardarEvento = async (e: FormEvent) => {
                 <select 
                   value={comCategoria} 
                   onChange={(e) => setComCategoria(e.target.value as any)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 h-11 text-white outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
+                  className="w-full bg-black/40 border border-slate-800 rounded-xl px-3 h-11 text-white outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
                 >
-                  <option value="Informativo" className="bg-[#0f172a]">Informativo</option>
-                  <option value="Mantenimiento" className="bg-[#0f172a]">Mantenimiento</option>
-                  <option value="Urgente" className="bg-[#0f172a]">Urgente</option>
+                  <option value="Informativo" className="bg-kbg">Informativo</option>
+                  <option value="Mantenimiento" className="bg-kbg">Mantenimiento</option>
+                  <option value="Urgente" className="bg-kbg">Urgente</option>
                 </select>
               </div>
 
@@ -1153,35 +1742,52 @@ const handleGuardarEvento = async (e: FormEvent) => {
                   value={comCuerpo} 
                   onChange={(e) => setComCuerpo(e.target.value)}
                   placeholder="Detalla la información aquí..."
-                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
+                  className="w-full bg-black/40 border border-slate-800 rounded-xl p-3 text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium text-white/80 flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 text-blue-400" /> Imagen Adjunta (Opcional)
+                  <ImageIcon className="w-4 h-4 text-slate-400" /> Imagen Adjunta (Opcional)
                 </Label>
                 <Input 
                   type="file" 
                   accept="image/*"
                   onChange={(e) => setComImagen(e.target.files ? e.target.files[0] : null)}
-                  className="w-full bg-black/40 border-white/10 text-white/70 file:text-white file:bg-blue-600/80 file:border-none file:rounded-lg file:px-4 file:py-1 file:mr-4 hover:file:bg-blue-600 cursor-pointer h-11 pt-1.5"
+                  className="w-full bg-black/40 border-slate-800 text-white/70 file:bg-slate-800 file:text-slate-200/80 file:border-none file:rounded-lg file:px-4 file:py-1 file:mr-4 hover:file:bg-white text-slate-900 cursor-pointer h-11 pt-1.5"
                 />
               </div>
+
+              {/* Toggle de Notificación */}
+              <label className="flex items-center gap-3 cursor-pointer p-4 bg-kcard/5 rounded-2xl border border-white/5 hover:bg-kcard/10 transition-all group">
+                <div className="relative flex items-center">
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    checked={comNotificar}
+                    onChange={e => setComNotificar(e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-kcard/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-kcard/40 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white text-slate-900 peer-checked:after:bg-kcard"></div>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-white text-sm font-semibold group-hover:text-slate-400 transition-colors">Notificar inmediatamente</span>
+                  <span className="text-white/30 text-[10px]">Envía correo automático a los vecinos</span>
+                </div>
+              </label>
 
               {/* Botones */}
               <div className="pt-2 flex gap-3">
                 <button 
                   type="button" 
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-semibold text-sm transition-colors border border-white/10"
+                  className="flex-1 py-2.5 rounded-xl bg-kcard/5 hover:bg-kcard/10 text-slate-900 font-semibold text-sm transition-colors border border-slate-800"
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit" 
                   disabled={isSubmittingCom}
-                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:text-white/50 text-white font-semibold text-sm transition-colors flex justify-center items-center gap-2 shadow-lg shadow-blue-500/20"
+                  className="flex-1 py-2.5 rounded-xl bg-white text-slate-900 hover:bg-slate-200 disabled:bg-slate-300 disabled:text-slate-500  font-semibold text-sm transition-colors flex justify-center items-center gap-2 shadow-md"
                 >
                   {isSubmittingCom ? 'Publicando...' : <><Send size={16} /> Publicar</>}
                 </button>
@@ -1193,7 +1799,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
       {/* ─── MODAL DE AGENDAR EVENTO ─── */}
       {isEventModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#1e293b] border border-white/10 rounded-3xl w-full max-w-lg p-6 shadow-2xl animate-in zoom-in duration-300">
+          <div className="bg-kcard border border-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-lg animate-in zoom-in duration-300">
             
             {/* Cabecera */}
             <div className="flex justify-between items-center mb-6">
@@ -1208,7 +1814,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
               </div>
               <button 
                 onClick={() => setIsEventModalOpen(false)} 
-                className="text-white/40 hover:text-white p-2 hover:bg-white/5 rounded-full transition-colors"
+                className="text-white/40 hover:text-white p-2 hover:bg-kcard/5 rounded-full transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -1220,7 +1826,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                 <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Título del Evento</Label>
                 <Input
                   placeholder="Ej: Asamblea Extraordinaria de Propietarios"
-                  className="bg-black/40 border-white/10 text-white placeholder:text-white/20 focus:border-emerald-500/50 transition-all"
+                  className="bg-black/40 border-slate-800 text-white placeholder:text-white/20 focus:border-emerald-500/50 transition-all"
                   value={newEvent.titulo}
                   onChange={e => setNewEvent({...newEvent, titulo: e.target.value})}
                   required
@@ -1233,7 +1839,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                   <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Fecha Inicio</Label>
                   <Input
                     type="date"
-                    className="bg-black/40 border-white/10 text-white focus:border-emerald-500/50"
+                    className="bg-black/40 border-slate-800 text-white focus:border-emerald-500/50 [color-scheme:dark]"
                     value={newEvent.fecha}
                     onChange={e => setNewEvent({...newEvent, fecha: e.target.value})}
                     required
@@ -1243,7 +1849,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                   <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Fecha Fin</Label>
                   <Input
                     type="date"
-                    className="bg-black/40 border-white/10 text-white focus:border-emerald-500/50"
+                    className="bg-black/40 border-slate-800 text-white focus:border-emerald-500/50 [color-scheme:dark]"
                     value={newEvent.fecha_fin}
                     onChange={e => setNewEvent({...newEvent, fecha_fin: e.target.value})}
                     required
@@ -1258,7 +1864,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                     <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Hora Inicio</Label>
                     <Input 
                       type="time" 
-                      className="bg-black/40 border-white/10 text-white" 
+                      className="bg-black/40 border-slate-800 text-white [color-scheme:dark]" 
                       value={newEvent.hora_inicio} 
                       onChange={e => setNewEvent({...newEvent, hora_inicio: e.target.value})} 
                       required 
@@ -1268,7 +1874,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                     <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Hora Fin</Label>
                     <Input 
                       type="time" 
-                      className="bg-black/40 border-white/10 text-white" 
+                      className="bg-black/40 border-slate-800 text-white [color-scheme:dark]" 
                       value={newEvent.hora_fin} 
                       onChange={e => setNewEvent({...newEvent, hora_fin: e.target.value})} 
                       required 
@@ -1288,9 +1894,9 @@ const handleGuardarEvento = async (e: FormEvent) => {
                       value={newEvent.tipo}
                       onChange={e => setNewEvent({...newEvent, tipo: e.target.value as any})}
                     >
-                      <option value="Asamblea" className="bg-[#1e293b] text-white">Asamblea </option>
-                      <option value="Mantenimiento" className="bg-[#1e293b] text-white">Mantenimiento </option>
-                      <option value="Social" className="bg-[#1e293b] text-white">Social </option>
+                      <option value="Asamblea" className="bg-kcard text-white">Asamblea </option>
+                      <option value="Mantenimiento" className="bg-kcard text-white">Mantenimiento </option>
+                      <option value="Social" className="bg-kcard text-white">Social </option>
                     </select>
                   </div>
                 </div>
@@ -1300,7 +1906,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
               <div>
                 <Label className="text-white/60 ml-1 mb-1.5 block text-sm">Descripción / Detalles</Label>
                 <textarea
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white h-24 text-sm focus:ring-1 focus:ring-emerald-500 outline-none placeholder:text-white/20"
+                  className="w-full bg-black/40 border border-slate-800 rounded-xl px-4 py-3 text-white h-24 text-sm focus:ring-1 focus:ring-emerald-500 outline-none placeholder:text-white/20"
                   placeholder="Ej: Se requiere la presencia de todos los copropietarios..."
                   value={newEvent.descripcion}
                   onChange={e => setNewEvent({...newEvent, descripcion: e.target.value})}
@@ -1308,7 +1914,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
               </div>
 
               {/* Toggle de Notificación */}
-              <label className="flex items-center gap-3 cursor-pointer p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition-all group">
+              <label className="flex items-center gap-3 cursor-pointer p-4 bg-kcard/5 rounded-2xl border border-white/5 hover:bg-kcard/10 transition-all group">
                 <div className="relative flex items-center">
                   <input
                     type="checkbox"
@@ -1316,7 +1922,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                     checked={newEvent.notificar_ahora}
                     onChange={e => setNewEvent({...newEvent, notificar_ahora: e.target.checked})}
                   />
-                  <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white/40 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 peer-checked:after:bg-white"></div>
+                  <div className="w-11 h-6 bg-kcard/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-kcard/40 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 peer-checked:after:bg-kcard"></div>
                 </div>
                 <div className="flex flex-col">
                   <span className="text-white text-sm font-semibold group-hover:text-emerald-400 transition-colors">Notificar inmediatamente</span>
@@ -1329,7 +1935,7 @@ const handleGuardarEvento = async (e: FormEvent) => {
                 <button 
                   type="button" 
                   onClick={() => setIsEventModalOpen(false)} 
-                  className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-semibold text-sm transition-colors border border-white/5"
+                  className="flex-1 py-3 rounded-xl bg-kcard/5 hover:bg-kcard/10 text-slate-900 font-semibold text-sm transition-colors border border-white/5"
                 >
                   Cancelar
                 </button>

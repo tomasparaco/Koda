@@ -1,10 +1,21 @@
 
   <!DOCTYPE html>
-  <html lang="en">
+  <html lang="es">
     <head>
       <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Untitled</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+      <meta name="theme-color" content="#0F172A" />
+      <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      <title>Kuota</title>
+      <script>
+        // Aplica el tema guardado antes de pintar la página (evita el parpadeo)
+        (function () {
+          var t = 'dark';
+          try { t = localStorage.getItem('kuota_theme') === 'light' ? 'light' : 'dark'; } catch (e) {}
+          document.documentElement.classList.add(t);
+        })();
+      </script>
     </head>
 
     <body>
