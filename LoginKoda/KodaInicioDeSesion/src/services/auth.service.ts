@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
-import type { RespuestaLogin } from '../types'; 
+import type { RespuestaLogin } from '../types';
+import { AdministradoraService } from './administradora.service';
 
 const isAbortError = (err: any) => {
     return err?.name === 'AbortError' || err?.message?.includes('AbortError');
@@ -24,10 +25,18 @@ export const AuthService = {
 
       if (!authData.user) return { exito: false, mensaje: 'Usuario no encontrado.' };
 
-      const misPropiedades = await AuthService.getMisPropiedades(authData.user.id);
+      const [misPropiedades, edificiosAdmin] = await Promise.all([
+        AuthService.getMisPropiedades(authData.user.id),
+        AdministradoraService.getEdificiosAdministrados(authData.user.id),
+      ]);
       const propiedadesFinal = misPropiedades || [];
 
-      return { exito: true, datos: propiedadesFinal as any };
+      if (propiedadesFinal.length === 0 && edificiosAdmin.length === 0) {
+        await supabase.auth.signOut();
+        return { exito: false, mensaje: 'Tu usuario no tiene apartamentos ni edificios asignados. Contacta a la administración.' };
+      }
+
+      return { exito: true, datos: propiedadesFinal as any, edificiosAdmin };
 
     } catch (error: any) {
       console.error("Login Error Catch:", error);
@@ -81,7 +90,7 @@ export const AuthService = {
     try {
         const { data, error } = await supabase
             .from('propietarios')
-            .select('*, edificios ( descripcion, direccion )')
+            .select('*, edificios ( * )')
             .eq('id_auth', userId);
         
         if (error) return null;

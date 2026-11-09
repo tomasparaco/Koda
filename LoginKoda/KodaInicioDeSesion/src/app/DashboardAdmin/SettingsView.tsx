@@ -2,9 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Building2, MapPin, Hash, Camera, Edit2, Save, X, AlertCircle, CreditCard } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import CuentasBancarias from './CuentasBancarias';
+import { useMoneda } from '../moneda/MonedaContext';
+import { ConfigCobro } from './ConfigCobro';
+import { ThemeSwitchRow } from '../theme/ThemeContext';
 
-export function SettingsView() {
-  const [codigoEdificioActual, setCodigoEdificioActual] = useState<string | null>(null);
+export function SettingsView({ codigoEdificio }: { codigoEdificio: string }) {
+  const codigoEdificioActual = codigoEdificio;
+  const { config, recargar } = useMoneda();
 
   const [nombre, setNombre] = useState('');
   const [direccion, setDireccion] = useState('');
@@ -22,66 +26,31 @@ export function SettingsView() {
       try {
         setLoading(true);
         setErrorCarga(null);
-
-        // 1. Obtener la sesión actual
-        const { data: authData, error: authError } = await supabase.auth.getUser();
-        
-        if (authError || !authData.user) {
-          throw new Error('No hay un usuario autenticado activo');
-        }
-
-        // CLAVE 1: Usamos el ID de autenticación, no el correo.
-        const userId = authData.user.id; 
-
-        // CLAVE 2: Usamos limit(1) por si el admin tiene 2 apartamentos (evita el error de .single())
-        const { data: datosPropietario, error: errorPropietario } = await supabase
-          .from('propietarios')
-          .select('codigo_edificio')
-          .eq('id_auth', userId)
-          .limit(1);
-
-        if (errorPropietario) throw errorPropietario;
-        
-        if (!datosPropietario || datosPropietario.length === 0) {
-          throw new Error('Tu usuario no está vinculado a ningún edificio en la base de datos.');
-        }
-
-        const idEdificioDinamico = datosPropietario[0].codigo_edificio;
-        setCodigoEdificioActual(idEdificioDinamico);
-
-        // 3. Traemos los datos del edificio
         const { data: datosEdificio, error: errorEdificio } = await supabase
           .from('edificios')
           .select('descripcion, direccion, rif')
-          .eq('codigo_edificio', idEdificioDinamico)
-          .single();
+          .eq('codigo_edificio', codigoEdificio)
+          .maybeSingle();
 
-        if (errorEdificio) {
-          // Si da error, no rompemos toda la página, solo mostramos consola
-          console.error("Error al traer datos del edificio:", errorEdificio);
-        }
-
+        if (errorEdificio) throw errorEdificio;
         if (datosEdificio) {
           setNombre(datosEdificio.descripcion || '');
           setDireccion(datosEdificio.direccion || '');
           setRif(datosEdificio.rif || '');
         }
-
       } catch (e: any) {
         console.error('Error sincronizando perfil de la BDD:', e);
-        setErrorCarga(e.message); // Guardamos el error para mostrarlo
+        setErrorCarga(e.message);
       } finally {
         setLoading(false);
       }
 
-      const savedLogo = localStorage.getItem('logoEdificio');
-      if (savedLogo) {
-        setLogoPreview(savedLogo);
-      }
+      const savedLogo = localStorage.getItem(`logoEdificio_${codigoEdificio}`) || localStorage.getItem('logoEdificio');
+      if (savedLogo) setLogoPreview(savedLogo);
     };
 
     fetchConfig();
-  }, []);
+  }, [codigoEdificio]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files && e.target.files[0];
@@ -91,7 +60,7 @@ export function SettingsView() {
       reader.onload = () => {
         const base64String = reader.result as string;
         setLogoPreview(base64String);
-        localStorage.setItem('logoEdificio', base64String);
+        localStorage.setItem(`logoEdificio_${codigoEdificio}`, base64String);
       };
       reader.readAsDataURL(file);
     }
@@ -139,6 +108,10 @@ export function SettingsView() {
           <p className="text-sm">{errorCarga}</p>
         </div>
       )}
+
+      <ConfigCobro codigoEdificio={codigoEdificio} config={config} onGuardado={recargar} />
+
+      <ThemeSwitchRow />
 
       <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 shadow-lg space-y-4">
         {/* Nombre */}

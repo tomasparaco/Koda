@@ -1,56 +1,75 @@
+export type Moneda = 'USD' | 'EUR';
+
+export interface TasaBCV {
+  rate: number;          // Bs por 1 unidad de la moneda (0 si no se pudo obtener)
+  lastUpdate: string;    // texto legible de la fecha de la tasa
+  isFallback: boolean;   // true si es una tasa vieja (sin conexión) o no disponible
+  moneda: Moneda;
+}
+
+const ENDPOINTS: Record<Moneda, string> = {
+  USD: 'https://ve.dolarapi.com/v1/dolares/oficial',
+  EUR: 'https://ve.dolarapi.com/v1/euros/oficial',
+};
+
+const cacheKey = (moneda: Moneda) => `Kuota_bcv_rate_${moneda}`;
+const hoy = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
+
+function readCache(moneda: Moneda): (TasaBCV & { fetchedOn?: string }) | null {
+  try {
+    const raw = localStorage.getItem(cacheKey(moneda));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Evita pedir la misma tasa varias veces a la vez (varias vistas montándose juntas)
+const enVuelo: Partial<Record<Moneda, Promise<TasaBCV>>> = {};
+
 export const bcvService = {
-    getLatestRate: async (): Promise<{ rate: number; lastUpdate: string; isFallback: boolean }> => {
-        try {
-            // Intentamos cargar desde localStorage primero para no saturar APIs gratuitamente
-            const cachedString = localStorage.getItem('kuota_bcv_rate');
-
-            if (cachedString) {
-                const cached = JSON.parse(cachedString);
-                const hoy = new Date().toISOString().split('T')[0];
-                const cachedDate = cached.lastUpdate.split(',')[0];
-
-                // Si ya obtuvimos la tasa HOY, la reutilizamos (API Limit protection)
-                if (cachedDate === new Date().toLocaleDateString('es-ES')) {
-                    return { rate: cached.rate, lastUpdate: cached.lastUpdate, isFallback: false };
-                }
-            }
-
-            // API PÚBLICA (Ejemplo de uso de una API gratuita que scrapea BCV o la API de VeDolar/Monitor)
-            // Como las APIs gratuitas de Venezuela a veces caen, usamos un Proxy de VeDolar u OpenExchange
-            // Dado que no siempre se puede asegurar la API en un entorno web sin backend (CORS), usamos un fallback si falla
-            const response = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
-            if (!response.ok) throw new Error('API Error');
-
-            const data = await response.json();
-            const rate = data.promedio;
-            const lastUpdateFull = new Date(data.fechaActualizacion).toLocaleString('es-ES');
-
-            const result = {
-                rate: Number(rate),
-                lastUpdate: lastUpdateFull,
-                isFallback: false
-            };
-
-            // Guardamos en caché
-            localStorage.setItem('kuota_bcv_rate', JSON.stringify(result));
-            return result;
-
-        } catch (error) {
-            console.warn('Error fetching BCV API, using fallback or cached data', error);
-
-            // Intentamos volver a usar la caché si existe, aunque esté vieja
-            const cachedString = localStorage.getItem('kuota_bcv_rate');
-            if (cachedString) {
-                const cached = JSON.parse(cachedString);
-                return { rate: cached.rate, lastUpdate: cached.lastUpdate + " (Sin conexión)", isFallback: true };
-            }
-
-            // Valor estático de emergencia en caso de que todo falle
-            return {
-                rate: 45.50,
-                lastUpdate: new Date().toLocaleString('es-ES') + " (Modo Offline)",
-                isFallback: true
-            };
-        }
+  /**
+   * Tasa oficial del BCV para USD o EUR.
+   * Se consulta una vez al día y se guarda en caché local.
+   */
+  getLatestRate: async (moneda: Moneda = 'USD'): Promise<TasaBCV> => {
+    const cached = readCache(moneda);
+    if (cached && cached.fetchedOn === hoy() && cached.rate > 0) {
+      return { rate: cached.rate, lastUpdate: cached.lastUpdate, isFallback: false, moneda };
     }
+
+    if (!enVuelo[moneda]) {
+      enVuelo[moneda] = (async () => {
+        try {
+          const response = await fetch(ENDPOINTS[moneda]);
+          if (!response.ok) throw new Error('API Error');
+          const data = await response.json();
+          const rate = Number(data.promedio);
+          if (!rate || isNaN(rate)) throw new Error('Tasa inválida');
+
+          const result: TasaBCV = {
+            rate,
+            lastUpdate: new Date(data.fechaActualizacion).toLocaleDateString('es-VE'),
+            isFallback: false,
+            moneda,
+          };
+          try {
+            localStorage.setItem(cacheKey(moneda), JSON.stringify({ ...result, fetchedOn: hoy() }));
+          } catch {
+            /* sin caché */
+          }
+          return result;
+        } catch (error) {
+          console.warn(`No se pudo obtener la tasa BCV (${moneda}), usando la última guardada`, error);
+          if (cached && cached.rate > 0) {
+            return { rate: cached.rate, lastUpdate: `${cached.lastUpdate} (sin conexión)`, isFallback: true, moneda };
+          }
+          return { rate: 0, lastUpdate: 'Tasa no disponible', isFallback: true, moneda };
+        } finally {
+          delete enVuelo[moneda];
+        }
+      })();
+    }
+    return enVuelo[moneda]!;
+  },
 };

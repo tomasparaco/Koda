@@ -6,9 +6,9 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 
-export default function AdminVotaciones() {
+export default function AdminVotaciones({ codigoEdificio: codigoProp }: { codigoEdificio: string }) {
   const [encuestas, setEncuestas] = useState<any[]>([]);
-  const [codigoEdificio, setCodigoEdificio] = useState<string | null>(null);
+  const [codigoEdificio, setCodigoEdificio] = useState<string | null>(codigoProp);
   const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -21,24 +21,13 @@ export default function AdminVotaciones() {
   const [archivoPreview, setArchivoPreview] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    setCodigoEdificio(codigoProp);
+    if (codigoProp) cargarEncuestas(codigoProp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codigoProp]);
 
   const fetchData = async () => {
-    const { data: authData } = await supabase.auth.getUser();
-    if (!authData.user) return;
-
-    const { data: propietario } = await supabase
-      .from('propietarios')
-      .select('codigo_edificio')
-      .eq('id_auth', authData.user.id)
-      .limit(1);
-
-    if (propietario && propietario.length > 0) {
-      const codigo = propietario[0].codigo_edificio;
-      setCodigoEdificio(codigo);
-      cargarEncuestas(codigo);
-    }
+    if (codigoEdificio) cargarEncuestas(codigoEdificio);
   };
 
   const cargarEncuestas = async (codigo: string) => {
