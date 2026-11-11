@@ -1,5 +1,5 @@
 import React, { ReactNode, useEffect, useRef } from 'react';
-import { motion, type Variants, useAnimation, useInView } from 'motion/react';
+import { motion, Variants, useAnimation, useInView } from 'framer-motion';
 
 // mismos variants que definimos en App pero los podemos reexportar si hace falta
 export const sectionContainer: Variants = {
@@ -59,4 +59,3 @@ export default function AnimatedSection({ children, className }: AnimatedSection
     </motion.div>
   );
 }
-

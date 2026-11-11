@@ -1,20 +1,17 @@
 //
 import React, { useState, useEffect, useMemo } from 'react';
-import { Mail, Lock, ArrowLeft, KeyRound, Eye, EyeOff } from 'lucide-react';
-import KuotaLogo from '../assets/LogoKuota4.png';
+import { Mail, Lock, ArrowLeft, KeyRound } from 'lucide-react';
+import kuotaLogo from '../assets/LogoKuota4.png';
 import { AuthService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import type { Propietario } from '../types';
 import DashboardLayout from './DashboardAdmin/DashboardLayout';
 import UserDashboard from './components/UserDashboard';
 import CondominioSelector from './components/CondominioSelector';
-import AdministradoraPanel from './Administradora/AdministradoraPanel';
-import { AdministradoraService, type EdificioAdministrado } from '../services/administradora.service';
-import { ThemeToggle } from './theme/ThemeContext';
-import { motion, type Variants } from 'motion/react';
+import { Variants } from 'framer-motion';
+import { motion } from 'framer-motion';
 // componente auxiliar que dispara la animación cuando entra en el viewport (scroll)
 import AnimatedSection from './components/AnimatedSection';
-import { BeamsBackground } from './components/ui/beams-background';
 
 export const container: Variants = {
   hidden: {},
@@ -43,20 +40,9 @@ export default function App() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [propiedades, setPropiedades] = useState<Propietario[]>([]);
   const [selectedPropiedad, setSelectedPropiedad] = useState<Propietario | null>(null);
-
-  // Administradora multi-edificio
-  const [edificiosAdmin, setEdificiosAdmin] = useState<EdificioAdministrado[]>([]);
-  const [verPanelAdmin, setVerPanelAdmin] = useState(false);
-  const [edificioGestionado, setEdificioGestionado] = useState<string | null>(null);
-  const haySesion = propiedades.length > 0 || edificiosAdmin.length > 0;
-  // Si solo es administradora (sin apartamentos), su pantalla principal es el panel
-  const mostrarPanelAdmin = edificiosAdmin.length > 0 && (verPanelAdmin || propiedades.length === 0);
 
   const [isResetMode, setIsResetMode] = useState(false);
   const [isUpdateFlow, setIsUpdateFlow] = useState(false);
@@ -64,16 +50,14 @@ export default function App() {
   // A key that changes whenever we switch to a different screen/view; used to trigger
   // a CSS animation on the container each time the user navigates.
   const viewKey = useMemo(() => {
-    if (haySesion && !isUpdateFlow) {
-      if (edificioGestionado) return `admin-edif-${edificioGestionado}`;
-      if (mostrarPanelAdmin) return 'admin-panel';
+    if (propiedades.length > 0) {
       if (!selectedPropiedad) return 'selector';
       return `${selectedPropiedad.rol}-${selectedPropiedad.id_propietario}`;
     }
     if (isUpdateFlow) return 'update';
     if (isResetMode) return 'reset';
     return 'login';
-  }, [haySesion, edificioGestionado, mostrarPanelAdmin, selectedPropiedad, isUpdateFlow, isResetMode]);
+  }, [propiedades.length, selectedPropiedad, isUpdateFlow, isResetMode]);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -99,25 +83,16 @@ export default function App() {
       if (event === 'SIGNED_IN' && session && !isUpdateFlow) {
         // Pequeño delay para evitar choques con el login manual
         setTimeout(async () => {
-          if (!haySesion) {
-            const [data, admin] = await Promise.all([
-              AuthService.getMisPropiedades(session.user.id),
-              AdministradoraService.getEdificiosAdministrados(session.user.id),
-            ]);
+          if (propiedades.length === 0) {
+            const data = await AuthService.getMisPropiedades(session.user.id);
             if (data) setPropiedades(data as any);
-            setEdificiosAdmin(admin);
           }
         }, 500);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [haySesion, isUpdateFlow]);
-
-  const recargarEdificiosAdmin = async () => {
-    const { data } = await supabase.auth.getUser();
-    if (data.user) setEdificiosAdmin(await AdministradoraService.getEdificiosAdministrados(data.user.id));
-  };
+  }, [propiedades.length, isUpdateFlow]);
 
   // --- HANDLERS (Con protección "finally" para no quedarse pegados) ---
 
@@ -132,7 +107,6 @@ export default function App() {
       const resultado = await AuthService.login(email, password);
 
       if (resultado.exito && resultado.datos) {
-        setEdificiosAdmin(resultado.edificiosAdmin || []);
         setPropiedades(resultado.datos);
       } else {
         setError(resultado.mensaje || 'Error desconocido');
@@ -195,9 +169,6 @@ export default function App() {
     AuthService.logout();
     setPropiedades([]);
     setSelectedPropiedad(null);
-    setEdificiosAdmin([]);
-    setVerPanelAdmin(false);
-    setEdificioGestionado(null);
     setError('');
     setPassword('');
     setIsResetMode(false);
@@ -217,48 +188,14 @@ export default function App() {
   // remount the container which in turn retriggers the CSS animation.
   let contenido: React.ReactNode;
 
-  if (haySesion && !isUpdateFlow) {
-    if (edificioGestionado) {
-      // La administradora entra a un edificio: misma vista que la junta de condominio
-      const adm = edificiosAdmin.find((e) => e.codigo_edificio === edificioGestionado);
-      const propiedadAdmin: Propietario = {
-        id_propietario: -1,
-        nombre: adm?.nombre || 'Administradora',
-        correo: adm?.correo || '',
-        apartamento: '',
-        alicuota: 0,
-        id_auth: '',
-        rol: 'admin',
-        codigo_edificio: edificioGestionado,
-        edificios: adm?.edificio,
-      };
-      contenido = (
-        <DashboardLayout
-          propiedad={propiedadAdmin}
-          esAdministradora
-          onLogout={handleLogout}
-          onBackToSelector={() => { setEdificioGestionado(null); setVerPanelAdmin(true); recargarEdificiosAdmin(); }}
-        />
-      );
-    } else if (mostrarPanelAdmin) {
-      contenido = (
-        <AdministradoraPanel
-          edificios={edificiosAdmin}
-          onGestionar={(codigo) => setEdificioGestionado(codigo)}
-          onLogout={handleLogout}
-          onIrAMisPropiedades={propiedades.length > 0 ? () => { setVerPanelAdmin(false); setSelectedPropiedad(null); } : undefined}
-          onEdificiosActualizados={recargarEdificiosAdmin}
-        />
-      );
-    } else if (!selectedPropiedad) {
-      // Si no hay propiedad seleccionada, pedimos al usuario que elija
+  if (propiedades.length > 0 && !isUpdateFlow) {
+    // Si no hay propiedad seleccionada, pedimos al usuario que elija
+    if (!selectedPropiedad) {
       contenido = (
         <CondominioSelector
           propiedades={propiedades}
           onSelect={(p) => setSelectedPropiedad(p)}
           onLogout={handleLogout}
-          edificiosAdministrados={edificiosAdmin.length}
-          onAbrirPanelAdmin={() => setVerPanelAdmin(true)}
         />
       );
     } else {
@@ -291,75 +228,78 @@ export default function App() {
     else if (isResetMode) { titulo = 'Recuperar Cuenta'; handleSubmit = handleResetRequest; }
 
     contenido = (
-      <BeamsBackground intensity="medium" className="flex items-center justify-center font-sans min-h-screen">
-        <div className="fixed top-4 right-4 z-20"><ThemeToggle className="bg-kbg/70 backdrop-blur" /></div>
-        <div className="w-full max-w-sm mx-4 z-10">
-          <div className="bg-kbg border border-slate-800/60 rounded-3xl p-8 shadow-2xl">
-            <div className="flex flex-col items-center mb-8">
-              <div className="w-24 h-24 rounded-2xl bg-kbg border border-slate-700 flex items-center justify-center mb-0 shadow-lg p-3 hover:scale-105 transition-transform duration-300">
-                <img src={KuotaLogo} alt="Kuota Logo" className="w-full h-full object-contain filter drop-shadow-md" />
-              </div>
-              <h1 className="text-2xl font-bold text-slate-100 tracking-tight mb-1 mt-4">Kuota</h1>
-              <h2 className="text-sm font-medium text-slate-400">{titulo}</h2>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {isUpdateFlow && (
-                <>
-                  <div className="relative">
-                    <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><KeyRound className="w-5 h-5 text-slate-500" /></div>
-                    <input type={showNewPassword ? "text" : "password"} placeholder="Nueva contraseña" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required className="theme-fixed w-full pl-12 pr-12 py-3.5 bg-white text-slate-900 placeholder-slate-400 rounded-xl focus:bg-white outline-none focus:ring-2 focus:ring-blue-500 border border-slate-200 transition-all" />
-                    <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
-                      {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Lock className="w-5 h-5 text-slate-500" /></div>
-                    <input type={showConfirmPassword ? "text" : "password"} placeholder="Confirmar contraseña" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="theme-fixed w-full pl-12 pr-12 py-3.5 bg-white text-slate-900 placeholder-slate-400 rounded-xl focus:bg-white outline-none focus:ring-2 focus:ring-blue-500 border border-slate-200 transition-all" />
-                    <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
-                      {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                </>
-              )}
-              {!isUpdateFlow && (
-                <div className="relative">
-                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Mail className="w-5 h-5 text-slate-500" /></div>
-                  <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required className="theme-fixed w-full pl-12 pr-4 py-3.5 bg-white text-slate-900 placeholder-slate-400 rounded-xl focus:bg-white outline-none focus:ring-2 focus:ring-blue-500 border border-slate-200 transition-all" />
-                </div>
-              )}
-              {!isUpdateFlow && !isResetMode && (
-                <div className="relative">
-                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Lock className="w-5 h-5 text-slate-500" /></div>
-                  <input type={showPassword ? "text" : "password"} placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} required className="theme-fixed w-full pl-12 pr-12 py-3.5 bg-white text-slate-900 placeholder-slate-400 rounded-xl focus:bg-white outline-none focus:ring-2 focus:ring-blue-500 border border-slate-200 transition-all" />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              )}
-              
-              {error && <div className="p-3 bg-red-950/30 border border-red-900/50 text-red-400 text-sm rounded-xl text-center">{error}</div>}
-              {successMsg && <div className="p-3 bg-green-950/30 border border-green-900/50 text-green-400 text-sm rounded-xl text-center">{successMsg}</div>}
-
-              <button type="submit" disabled={loading} className="w-full mt-2 py-3.5 bg-slate-100 text-slate-900 font-semibold rounded-xl hover:bg-white active:scale-[0.98] transition-all disabled:opacity-50">
-                {loading ? 'Procesando...' : (isUpdateFlow ? 'Guardar Nueva Contraseña' : (isResetMode ? 'Enviar Enlace' : 'Iniciar Sesión'))}
-              </button>
-            </form>
-
-            {!isUpdateFlow && (
-              <div className="mt-8 text-center space-y-3">
-                {!isResetMode ? (
-                  <>
-                    <button type="button" onClick={toggleMode} className="text-slate-400 text-sm hover:text-slate-200 transition-colors">¿Olvidaste tu contraseña?</button>
-                  </>
-                ) : (
-                  <button type="button" onClick={toggleMode} className="flex items-center justify-center w-full text-slate-400 text-sm hover:text-slate-200 transition-colors gap-2"><ArrowLeft className="w-4 h-4" /> Volver al inicio</button>
-                )}
-              </div>
-            )}
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#2B4A7C] relative overflow-hidden font-sans">
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-40 -left-40 w-96 h-96 bg-[#1F3A5F] rounded-full opacity-50"></div>
+          <div className="absolute top-1/4 -right-32 w-80 h-80 bg-[#3D5A80] rounded-full opacity-40"></div>
+          <div className="absolute bottom-1/3 left-1/4 w-64 h-64 bg-[#4A6FA5] rounded-3xl opacity-30 rotate-45"></div>
+          <div className="absolute bottom-20 -left-20 w-48 h-48 bg-[#6B8EC7] rounded-full opacity-40"></div>
+          <div className="absolute -bottom-20 right-20 w-56 h-56 bg-[#5074A8] rounded-2xl opacity-25 rotate-12"></div>
+          <div className="absolute bottom-10 right-10">
+            <div className="w-16 h-16 relative"><div className="absolute inset-0 bg-white opacity-60 rounded-full blur-md"></div></div>
           </div>
         </div>
-      </BeamsBackground>
+
+        <div className="relative z-10 w-full max-w-sm mx-4">
+          <div className="bg-gradient-to-b from-[#6BA3D8] to-[#4A7FDB] rounded-[2.5rem] p-8 shadow-2xl">
+            <div className="flex flex-col items-center mb-8">
+              <div className="w-28 h-28 rounded-3xl bg-white flex items-center justify-center mb-4 shadow-lg p-3">
+                <img src={kuotaLogo} alt="Kuota Logo" className="w-full h-full object-contain" />
+              </div>
+              <h1 className="text-3xl font-bold text-white mb-2">Kuota</h1>
+              <h2 className="text-xl font-semibold text-white tracking-wide">{titulo}</h2>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 shadow-xl">
+              <form onSubmit={handleSubmit}>
+                {isUpdateFlow && (
+                  <>
+                    <div className="mb-4 relative">
+                      <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><KeyRound className="w-5 h-5 text-[#4A7FDB]" /></div>
+                      <input type="password" placeholder="Nueva contraseña" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
+                    </div>
+                    <div className="mb-4 relative">
+                      <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Lock className="w-5 h-5 text-[#4A7FDB]" /></div>
+                      <input type="password" placeholder="Confirmar contraseña" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
+                    </div>
+                  </>
+                )}
+                {!isUpdateFlow && (
+                  <div className="mb-4 relative">
+                    <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Mail className="w-5 h-5 text-[#4A7FDB]" /></div>
+                    <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
+                  </div>
+                )}
+                {!isUpdateFlow && !isResetMode && (
+                  <div className="mb-4 relative">
+                    <div className="absolute left-4 top-1/2 transform -translate-y-1/2"><Lock className="w-5 h-5 text-[#4A7FDB]" /></div>
+                    <input type="password" placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full pl-12 pr-4 py-3.5 bg-gray-100 rounded-xl focus:bg-white outline-none focus:border-[#4A7FDB] border-2 border-transparent transition-all" />
+                  </div>
+                )}
+                {error && <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-500 text-sm rounded-xl text-center">{error}</div>}
+                {successMsg && <div className="mb-4 p-3 bg-green-50 border border-green-100 text-green-600 text-sm rounded-xl text-center">{successMsg}</div>}
+
+                <button type="submit" disabled={loading} className="w-full py-3.5 bg-gradient-to-r from-[#4A7FDB] to-[#5DA9E8] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70">
+                  {loading ? 'Procesando...' : (isUpdateFlow ? 'Guardar Nueva Contraseña' : (isResetMode ? 'Enviar Enlace' : 'Iniciar Sesión'))}
+                </button>
+              </form>
+
+              {!isUpdateFlow && (
+                <div className="mt-6 text-center space-y-2">
+                  {!isResetMode ? (
+                    <>
+                      <p className="text-gray-600 text-sm">No tienes cuenta? <button className="text-[#4A7FDB] font-semibold hover:underline">Regístrate</button></p>
+                      <button type="button" onClick={toggleMode} className="text-[#4A7FDB] text-sm hover:underline font-medium">Olvidaste tu contraseña?</button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={toggleMode} className="flex items-center justify-center w-full text-gray-500 text-sm hover:text-[#4A7FDB] transition-colors gap-2"><ArrowLeft className="w-4 h-4" /> Volver al inicio</button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -380,5 +320,4 @@ export default function App() {
     </motion.div>
   );
 }
-
 
