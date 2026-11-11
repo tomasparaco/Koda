@@ -1,11 +1,5 @@
 @custom-variant dark (&:is(.dark *));
 
-/* Colores base de Kuota (modo oscuro). En modo claro se redefinen en theme-light.css */
-@theme {
-  --color-kbg: #0F172A;   /* fondo de página */
-  --color-kcard: #1E293B; /* tarjetas, menús, modales */
-}
-
 :root {
   --font-size: 16px;
   --background: #ffffff;
@@ -132,7 +126,6 @@
 
   body {
     @apply bg-background text-foreground;
-    background-color: var(--color-kbg);
   }
 
   /**
@@ -142,7 +135,6 @@
 
   html {
     font-size: var(--font-size);
-    background-color: var(--color-kbg);
   }
 
   h1 {
@@ -187,10 +179,3 @@
     line-height: 1.5;
   }
 }
-
-/* Ocultar el ícono de ojo por defecto en navegadores como Edge */
-input[type="password"]::-ms-reveal,
-input[type="password"]::-ms-clear {
-  display: none !important;
-}
-

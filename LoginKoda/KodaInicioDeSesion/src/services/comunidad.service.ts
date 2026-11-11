@@ -246,24 +246,6 @@ export const ComunidadService = {
     }
   },
 
-  deleteComunicado: async (id: string, imagen_url?: string | null) => {
-    try {
-      if (imagen_url) {
-        const pathParts = imagen_url.split('/comunicados/');
-        if (pathParts.length > 1) {
-          const filePath = pathParts[1];
-          await supabase.storage.from('comunicados').remove([filePath]);
-        }
-      }
-      const { error } = await supabase.from('comunicados').delete().eq('id', id);
-      if (error) throw error;
-      return { exito: true };
-    } catch (error: any) {
-      console.error('Error deleting comunicado:', error);
-      return { exito: false, mensaje: error.message };
-    }
-  },
-
   getEventos: async (codigo_edificio: string) => {
     const { data, error } = await supabase
       .from('eventos')
@@ -286,33 +268,5 @@ export const ComunidadService = {
       return { exito: false, mensaje: error.message };
     }
   },
-
-  updateEvento: async (id: string, evento: Partial<EventoCondominio>) => {
-    try {
-      const { data, error } = await supabase
-        .from('eventos')
-        .update(evento)
-        .eq('id', id)
-        .select();
-      if (error) throw error;
-      return { exito: true, data: data[0] };
-    } catch (error: any) {
-      return { exito: false, mensaje: error.message };
-    }
-  },
-
-  deleteEvento: async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('eventos')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      return { exito: true };
-    } catch (error: any) {
-      return { exito: false, mensaje: error.message };
-    }
-  },
   
 };
-
